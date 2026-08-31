@@ -22,7 +22,7 @@ export default async function DocumentsPage() {
           <div className="p-5">
             <EmptyState
               title="No documents yet"
-              description="Transaction documents you upload will appear here. Document upload is coming in a future update."
+              description="Documents you upload from a transaction's page will appear here."
             />
           </div>
         ) : (
