@@ -203,3 +203,85 @@ export async function setTransactionEventStatusAction(formData: FormData) {
   revalidatePath("/");
   revalidatePath(`/transactions/${event.transactionId}`);
 }
+
+const updateEventSchema = z.object({
+  eventId: z.string().min(1),
+  date: z
+    .string()
+    .refine((value) => !Number.isNaN(Date.parse(value)), "Enter a valid date")
+    .transform((value) => new Date(value)),
+  notes: optionalString,
+  overrideNote: optionalString,
+});
+
+export interface UpdateEventState {
+  error?: string;
+}
+
+/**
+ * Edits any transaction event's date/notes. For a calculated event
+ * (isCalculated), moving the date away from calculatedDate marks it
+ * overridden; moving it back to exactly calculatedDate clears the override.
+ * calculatedDate/calculationBasis are never touched here — only
+ * confirmContractInformationAction updates those, so the "what the rule
+ * says" record stays intact regardless of how many times the agent edits
+ * the actual date.
+ */
+export async function updateTransactionEventAction(
+  _prevState: UpdateEventState | undefined,
+  formData: FormData,
+): Promise<UpdateEventState> {
+  const session = await requireSession();
+
+  const parsed = updateEventSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Check the form and try again." };
+  }
+
+  const { eventId, date, notes, overrideNote } = parsed.data;
+
+  const event = await prisma.transactionEvent.findFirst({
+    where: { id: eventId, transaction: { ownerId: session.user.id } },
+  });
+  if (!event) {
+    return { error: "That date could not be found." };
+  }
+
+  const isOverridden = event.isCalculated
+    ? event.calculatedDate === null || date.getTime() !== event.calculatedDate.getTime()
+    : false;
+
+  await prisma.transactionEvent.update({
+    where: { id: event.id },
+    data: {
+      date,
+      notes,
+      isOverridden,
+      overrideNote: isOverridden ? (overrideNote ?? event.overrideNote) : null,
+    },
+  });
+
+  revalidatePath(`/transactions/${event.transactionId}`);
+  redirect(`/transactions/${event.transactionId}`);
+}
+
+/** Discards a manual override, restoring the date the current calculation rule produces. */
+export async function resetTransactionEventOverrideAction(formData: FormData) {
+  const session = await requireSession();
+
+  const eventId = formData.get("eventId");
+  if (typeof eventId !== "string") return;
+
+  const event = await prisma.transactionEvent.findFirst({
+    where: { id: eventId, transaction: { ownerId: session.user.id } },
+  });
+  if (!event || !event.isCalculated || event.calculatedDate === null) return;
+
+  await prisma.transactionEvent.update({
+    where: { id: event.id },
+    data: { date: event.calculatedDate, isOverridden: false, overrideNote: null },
+  });
+
+  revalidatePath(`/transactions/${event.transactionId}`);
+  redirect(`/transactions/${event.transactionId}`);
+}

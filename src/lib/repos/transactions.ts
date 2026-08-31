@@ -48,8 +48,20 @@ export function getTransactionById(userId: string, transactionId: string) {
       // createMany assigns cuids sequentially, so id is a reliable
       // tiebreaker when a whole checklist shares one createdAt instant.
       tasks: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
-      documents: { orderBy: { uploadedAt: "desc" } },
+      documents: {
+        orderBy: { uploadedAt: "desc" },
+        include: {
+          uploadedByUser: { select: { name: true } },
+          contractInformation: { select: { id: true, confirmedAt: true } },
+        },
+      },
     },
+  });
+}
+
+export function getTransactionEventById(userId: string, eventId: string) {
+  return prisma.transactionEvent.findFirst({
+    where: { id: eventId, transaction: { ownerId: userId } },
   });
 }
 

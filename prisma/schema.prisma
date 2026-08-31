@@ -28,12 +28,14 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  contacts     Contact[]
-  clients      Client[]
-  transactions Transaction[]
-  tasks        Task[]
-  documents    Document[]
-  integrations Integration[]
+  contacts                     Contact[]
+  clients                      Client[]
+  transactions                 Transaction[]
+  tasks                        Task[]
+  documents                    Document[]
+  integrations                 Integration[]
+  contractInformationOwned     ContractInformation[] @relation("ContractInformationOwner")
+  contractInformationConfirmed ContractInformation[] @relation("ContractInformationConfirmedBy")
 
   @@map("users")
 }
@@ -231,9 +233,10 @@ model Transaction {
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
-  events    TransactionEvent[]
-  tasks     Task[]
-  documents Document[]
+  events              TransactionEvent[]
+  tasks               Task[]
+  documents           Document[]
+  contractInformation ContractInformation[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -277,10 +280,33 @@ model TransactionEvent {
   description String?
   date        DateTime
   status      TransactionEventStatus @default(PENDING)
-  // Where this date came from — "manual" today; future contract-extraction
-  // workflows can record their own source label here without a schema change.
+  // Where this date came from — "manual" (agent-added via Important Dates)
+  // or "contract_information" (produced by confirming a ContractInformation
+  // record). Kept as a free string, not an enum, exactly so a later phase
+  // (e.g. OCR-assisted extraction) can add its own source label without a
+  // schema change.
   source      String                 @default("manual")
   notes       String?
+
+  // Calculation transparency (Phase 5). A date entered directly on a
+  // ContractInformation record (contract effective, closing) is not
+  // "calculated" — isCalculated is only true for a date derived from a
+  // period rule (effective date + N days). calculatedDate preserves what
+  // the rule produced even after a user override, so the original basis is
+  // never lost. overrideNote is free text the agent can use to explain why
+  // they changed it (e.g. a specific contract clause).
+  isCalculated     Boolean   @default(false)
+  calculationBasis String?
+  calculatedDate   DateTime?
+  isOverridden     Boolean   @default(false)
+  overrideNote     String?
+
+  // The ContractInformation record that produced/last updated this event,
+  // if any. Nullable — manual events have none. Paired with the unique
+  // constraint below: re-confirming the same ContractInformation record
+  // updates its existing events in place instead of duplicating them.
+  contractInformationId String?
+  contractInformation   ContractInformation? @relation(fields: [contractInformationId], references: [id], onDelete: SetNull)
 
   transactionId String
   transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
@@ -288,9 +314,11 @@ model TransactionEvent {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([contractInformationId, eventType])
   @@index([transactionId])
   @@index([date])
   @@index([eventType])
+  @@index([contractInformationId])
   @@map("transaction_events")
 }
 
@@ -432,7 +460,7 @@ model TaskTemplate {
 }
 
 // ---------------------------------------------------------------------------
-// Documents — foundation only; no AI parsing in this phase.
+// Documents — private storage; no OCR/AI parsing in this phase.
 // ---------------------------------------------------------------------------
 
 enum DocumentType {
@@ -456,12 +484,17 @@ model Document {
   id           String         @id @default(cuid())
   filename     String
   documentType DocumentType   @default(OTHER)
+  description  String?
   // Opaque reference into the storage backend (local path or object-storage
   // key). The storage backend itself is an abstraction — see src/lib/storage.
+  // Never exposed to the client directly; documents are only ever served
+  // through the authenticated /api/documents/[id] route.
   storagePath  String
+  fileSize     Int
+  mimeType     String
   status       DocumentStatus @default(UPLOADED)
-  // Free-form metadata bag (mime type, size, page count, ...) so the schema
-  // doesn't need to grow a column per storage/detail concern.
+  // Free-form metadata bag (page count, ...) so the schema doesn't need to
+  // grow a column per storage/detail concern.
   metadata     Json?
 
   uploadedByUserId String
@@ -477,6 +510,12 @@ model Document {
   transactionId String?
   transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 
+  // A CONTRACT-type document may have exactly one structured
+  // ContractInformation record built from it. Restrict (not Cascade orphan
+  // deletion elsewhere handles): a document with confirmed contract
+  // information behind it can't be silently deleted out from under it.
+  contractInformation ContractInformation?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -485,6 +524,105 @@ model Document {
   @@index([contactId])
   @@index([uploadedByUserId])
   @@map("documents")
+}
+
+// ---------------------------------------------------------------------------
+// Contract information — structured, user-entered/confirmed data from a
+// signed contract document. Deliberately separate from Transaction's own
+// purchasePrice/contractEffectiveDate/expectedClosingDate: those are the
+// CRM's working fields (may be set before a contract exists, or drift from
+// it during negotiation), while this table is specifically "what the signed
+// contract says," with its own provenance. Nothing here is inferred or
+// OCR'd — every field is what the agent typed in and confirmed.
+//
+// One row per contract Document (documentId is unique below), not one per
+// Transaction: an original contract and a later amendment are different
+// Documents, so they naturally get different ContractInformation rows.
+// That is the whole amendment story this phase needs to support — no
+// version-chain or "supersedes" modeling yet, just not structurally
+// preventing it.
+// ---------------------------------------------------------------------------
+
+enum ContractPeriodDayType {
+  CALENDAR
+  BUSINESS
+}
+
+model ContractInformation {
+  id String @id @default(cuid())
+
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  documentId String   @unique
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Restrict)
+
+  // Denormalized from transaction.ownerId, same authorization-query pattern
+  // as every other model here.
+  ownerId String
+  owner   User   @relation("ContractInformationOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  // Parties — free text. A contract can list multiple buyers/sellers, and a
+  // full parties/signatories model is more than this phase needs.
+  buyerNames  String?
+  sellerNames String?
+
+  // Property — left blank unless the contract's stated address differs from
+  // the transaction's working property address; nothing here re-copies data
+  // that already matches.
+  propertyAddress String?
+  propertyCity    String?
+  propertyState   String?
+  propertyZip     String?
+
+  // Financial — the contract's own stated terms. Kept separate from
+  // Transaction.purchasePrice specifically so the two can be compared
+  // (a contract can be negotiated after the transaction record is created).
+  purchasePrice      Decimal? @db.Decimal(12, 2)
+  earnestMoneyAmount Decimal? @db.Decimal(12, 2)
+
+  // Dates stated directly in the contract — not calculated.
+  contractEffectiveDate DateTime?
+  expectedClosingDate   DateTime?
+  earnestMoneyDueDate   DateTime?
+
+  // Contract periods. Every field is independently nullable and has no
+  // default length — see calculateContractEvents in
+  // src/lib/contracts/dates.ts, which refuses to invent a period the user
+  // didn't enter. dayType is the user's own calendar/business-day call, not
+  // an assumption: BUSINESS counts Monday–Friday only (no holiday
+  // calendar), which is disclosed in the UI wherever a calculated date is
+  // shown.
+  inspectionPeriodDays    Int?
+  inspectionPeriodDayType ContractPeriodDayType?
+  financingPeriodDays     Int?
+  financingPeriodDayType  ContractPeriodDayType?
+  appraisalPeriodDays     Int?
+  appraisalPeriodDayType  ContractPeriodDayType?
+  titlePeriodDays         Int?
+  titlePeriodDayType      ContractPeriodDayType?
+
+  notes String?
+
+  // Presence of confirmedAt is the source of truth for "confirmed" — no
+  // separate status enum to keep in sync with it. Before confirmedAt is
+  // set, this row is a draft: nothing it contains has produced a
+  // TransactionEvent yet.
+  confirmedAt       DateTime?
+  confirmedByUserId String?
+  confirmedByUser   User?     @relation("ContractInformationConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: SetNull)
+
+  // Events this record has generated/updated via confirmation. See
+  // TransactionEvent.contractInformationId for the uniqueness rule that
+  // makes re-confirming idempotent.
+  events TransactionEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([transactionId])
+  @@index([ownerId])
+  @@map("contract_information")
 }
 
 // ---------------------------------------------------------------------------

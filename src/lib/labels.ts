@@ -2,6 +2,9 @@ import type {
   ClientStatus,
   ClientType,
   ContactType,
+  ContractPeriodDayType,
+  DocumentStatus,
+  DocumentType,
   TaskPriority,
   TaskStatus,
   TransactionEventType,
@@ -63,7 +66,7 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
 };
 
 export const TRANSACTION_EVENT_TYPE_LABELS: Record<TransactionEventType, string> = {
-  CONTRACT_EFFECTIVE: "Contract Effective",
+  CONTRACT_EFFECTIVE: "Contract Effective Date",
   EARNEST_MONEY_DUE: "Earnest Money Due",
   INSPECTION_PERIOD_START: "Inspection Period Starts",
   INSPECTION_PERIOD_END: "Inspection Period Ends",
@@ -74,4 +77,26 @@ export const TRANSACTION_EVENT_TYPE_LABELS: Record<TransactionEventType, string>
   FINAL_WALKTHROUGH: "Final Walkthrough",
   POSSESSION_DATE: "Possession Date",
   OTHER: "Other",
+};
+
+export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
+  CONTRACT: "Contract",
+  DISCLOSURE: "Disclosure",
+  ADDENDUM: "Addendum",
+  INSPECTION_REPORT: "Inspection",
+  APPRAISAL: "Appraisal",
+  TITLE_DOCUMENT: "Title",
+  CLOSING_STATEMENT: "Closing",
+  OTHER: "Other",
+};
+
+export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
+  UPLOADED: "Uploaded",
+  REVIEWED: "Reviewed",
+  ARCHIVED: "Archived",
+};
+
+export const CONTRACT_PERIOD_DAY_TYPE_LABELS: Record<ContractPeriodDayType, string> = {
+  CALENDAR: "Calendar days",
+  BUSINESS: "Business days (Mon–Fri, holidays not excluded)",
 };
