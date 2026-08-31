@@ -28,11 +28,12 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  contacts      Contact[]
-  clients       Client[]
-  transactions  Transaction[]
-  tasks         Task[]
-  documents     Document[]
+  contacts     Contact[]
+  clients      Client[]
+  transactions Transaction[]
+  tasks        Task[]
+  documents    Document[]
+  integrations Integration[]
 
   @@map("users")
 }
@@ -41,13 +42,17 @@ model User {
 // Contacts — any person, regardless of source
 // ---------------------------------------------------------------------------
 
-// Where a contact originated. Kept open-ended so future integrations
-// (BoldTrail, Follow Up Boss, ...) can be added without a schema rewrite.
+// Where a contact originated. Kept open-ended so future lead sources
+// (BoldTrail, Follow Up Boss, Bullseye, Facebook, other IDX/lead vendors, ...)
+// can be added without redesigning Contact — a new value here plus a new
+// ExternalProvider value is the entire schema change a new source needs.
 enum ContactSource {
   MANUAL
   BOLDTRAIL
   FOLLOW_UP_BOSS
+  BULLSEYE
   WEBSITE
+  FACEBOOK
   REFERRAL
   OTHER
 }
@@ -64,24 +69,24 @@ enum ContactType {
 }
 
 model Contact {
-  id             String        @id @default(cuid())
-  firstName      String
-  lastName       String
-  preferredName  String?
-  email          String?
-  phone          String?
-  secondaryPhone String?
-  address        String?
-  city           String?
-  state          String?
-  zip            String?
-  contactType    ContactType   @default(LEAD)
-  source         ContactSource @default(MANUAL)
+  id              String        @id @default(cuid())
+  firstName       String
+  lastName        String
+  preferredName   String?
+  email           String?
+  phone           String?
+  secondaryPhone  String?
+  address         String?
+  city            String?
+  state           String?
+  zip             String?
+  contactType     ContactType   @default(LEAD)
+  source          ContactSource @default(MANUAL)
   // Identifier of this record in the source system (e.g. the BoldTrail or
   // Follow Up Boss contact ID). Lets future sync jobs match records instead
   // of creating duplicates. Null for contacts entered manually.
   sourceContactId String?
-  notes          String?
+  notes           String?
 
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
@@ -90,6 +95,7 @@ model Contact {
   tasks             Task[]
   documents         Document[]
   externalSyncLinks ExternalSyncLink[]
+  activities        ContactActivity[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -99,6 +105,41 @@ model Contact {
   @@index([phone])
   @@index([source, sourceContactId])
   @@map("contacts")
+}
+
+// A contact's activity timeline. Manual actions (a note, a status change)
+// and integration-generated events (a new lead synced in, a Facebook form
+// submission) both land here through the same shape, so the future
+// contact detail page never needs separate manual/integration feeds.
+enum ContactActivityType {
+  CREATED
+  NOTE_ADDED
+  STATUS_CHANGED
+  SYNCED
+  OTHER
+}
+
+model ContactActivity {
+  id              String              @id @default(cuid())
+  type            ContactActivityType
+  description     String
+  // Same vocabulary as Contact.source — "manual" for agent-entered
+  // activity, or the provider that generated it.
+  source          ContactSource       @default(MANUAL)
+  // The originating system's id for the event that produced this entry
+  // (e.g. a webhook delivery or lead-event id). Lets a future sync job
+  // dedupe/replay deliveries safely; null for manual activity.
+  externalEventId String?
+  metadata        Json?
+
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([contactId])
+  @@index([source, externalEventId])
+  @@map("contact_activities")
 }
 
 // ---------------------------------------------------------------------------
@@ -117,7 +158,7 @@ enum ClientType {
 }
 
 model Client {
-  id     String @id @default(cuid())
+  id     String       @id @default(cuid())
   status ClientStatus @default(ACTIVE)
   type   ClientType
   notes  String?
@@ -162,9 +203,9 @@ enum TransactionStatus {
 }
 
 model Transaction {
-  id     String             @id @default(cuid())
+  id     String            @id @default(cuid())
   type   TransactionType
-  status TransactionStatus  @default(PROSPECT)
+  status TransactionStatus @default(PROSPECT)
 
   propertyAddress String?
   propertyCity    String?
@@ -228,15 +269,15 @@ enum TransactionEventStatus {
 }
 
 model TransactionEvent {
-  id          String                  @id @default(cuid())
+  id          String                 @id @default(cuid())
   eventType   TransactionEventType
   title       String
   description String?
   date        DateTime
-  status      TransactionEventStatus  @default(PENDING)
+  status      TransactionEventStatus @default(PENDING)
   // Where this date came from — "manual" today; future contract-extraction
   // workflows can record their own source label here without a schema change.
-  source      String                  @default("manual")
+  source      String                 @default("manual")
   notes       String?
 
   transactionId String
@@ -339,7 +380,7 @@ model Document {
   metadata     Json?
 
   uploadedByUserId String
-  uploadedByUser   User   @relation(fields: [uploadedByUserId], references: [id], onDelete: Cascade)
+  uploadedByUser   User     @relation(fields: [uploadedByUserId], references: [id], onDelete: Cascade)
   uploadedAt       DateTime @default(now())
 
   contactId String?
@@ -363,14 +404,24 @@ model Document {
 
 // ---------------------------------------------------------------------------
 // Integration layer foundation — no provider-specific logic on core models.
-// Tracks the sync relationship between an external CRM record and a local
-// Contact so future BoldTrail / Follow Up Boss sync jobs can match instead
-// of duplicating records.
+// Two distinct concepts:
+//   Integration        — a connection to an external system (one per
+//                         provider per owner): is it connected, and how did
+//                         its last sync go.
+//   ExternalSyncLink    — per-record traceability: which external record a
+//                         local Contact was matched to, so future sync jobs
+//                         can match instead of duplicating records.
+// Nothing here implements an actual sync — no BoldTrail/FUB/Bullseye/
+// Facebook/website client code exists yet. This phase only makes sure a
+// future integration is additive, not a redesign.
 // ---------------------------------------------------------------------------
 
 enum ExternalProvider {
   BOLDTRAIL
   FOLLOW_UP_BOSS
+  BULLSEYE
+  WEBSITE
+  FACEBOOK
   OTHER
 }
 
@@ -380,21 +431,57 @@ enum SyncStatus {
   ERROR
 }
 
+enum IntegrationStatus {
+  DISCONNECTED
+  CONNECTED
+  ERROR
+}
+
+model Integration {
+  id            String            @id @default(cuid())
+  provider      ExternalProvider
+  status        IntegrationStatus @default(DISCONNECTED)
+  // Non-secret configuration only (e.g. sync frequency, field mappings).
+  // Where/how credentials get stored is a decision for whichever phase
+  // implements the first real connection — deliberately not modeled yet.
+  settings      Json?
+  lastSyncedAt  DateTime?
+  lastSyncError String?
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  syncLinks ExternalSyncLink[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([ownerId, provider])
+  @@map("integrations")
+}
+
 model ExternalSyncLink {
-  id         String            @id @default(cuid())
-  provider   ExternalProvider
-  externalId String
+  id           String           @id @default(cuid())
+  provider     ExternalProvider
+  externalId   String
   lastSyncedAt DateTime?
-  syncStatus SyncStatus        @default(PENDING)
-  syncError  String?
+  syncStatus   SyncStatus       @default(PENDING)
+  syncError    String?
 
   contactId String
   contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  // Which connection produced this link. Nullable because a link can be
+  // recorded (e.g. from a one-off import) before a full Integration
+  // connection exists for that provider.
+  integrationId String?
+  integration   Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([provider, externalId])
   @@index([contactId])
+  @@index([integrationId])
   @@map("external_sync_links")
 }

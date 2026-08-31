@@ -3,15 +3,7 @@ import { listContacts } from "@/lib/repos/lists";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { contactDisplayName } from "@/lib/format";
-
-const SOURCE_LABELS: Record<string, string> = {
-  MANUAL: "Manual",
-  BOLDTRAIL: "BoldTrail",
-  FOLLOW_UP_BOSS: "Follow Up Boss",
-  WEBSITE: "Website",
-  REFERRAL: "Referral",
-  OTHER: "Other",
-};
+import { CONTACT_SOURCE_LABELS } from "@/lib/integrations/providers";
 
 export default async function ContactsPage() {
   const session = await requireSession();
@@ -48,7 +40,7 @@ export default async function ContactsPage() {
                   </p>
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  {SOURCE_LABELS[contact.source] ?? contact.source}
+                  {CONTACT_SOURCE_LABELS[contact.source]}
                 </span>
               </div>
             ))}

@@ -44,12 +44,22 @@ this codebase.
   generic (transaction, eventType, title, date, status) row rather than
   dozens of hard-coded date columns, so different contract templates can
   introduce new deadline types without a schema migration.
-- **Integration-ready, not integrated**: `Contact.source` /
-  `Contact.sourceContactId` and the `ExternalSyncLink` model
-  (provider, externalId, local contact id, last-synced timestamp, sync
-  status/error) exist so a future BoldTrail/Follow Up Boss sync job can
-  match instead of duplicating records. No provider-specific logic exists
-  anywhere yet — this phase does not implement either integration.
+- **Integration-ready, not integrated**: nothing in the Contacts/Leads
+  system assumes manual entry is the only way a record gets created.
+  `Contact.source` / `ContactSource` covers every lead source the CRM
+  expects to support (BoldTrail, Follow Up Boss, Bullseye, website/IDX,
+  Facebook, referral, manual, other) and `Contact.sourceContactId` holds
+  that source's id for the contact, so a future sync job can match instead
+  of duplicating records. `Integration` (one row per provider per owner:
+  connected/disconnected, last sync time/error) and `ExternalSyncLink`
+  (per-record provider + externalId + sync status, optionally tied to the
+  `Integration` that produced it) are the connection-level vs. record-level
+  halves of the same concept. `ContactActivity` is a single timeline shape
+  for both manual actions (a note, a status change) and integration-
+  generated events, carrying an optional `externalEventId` so a future
+  webhook consumer can dedupe/replay deliveries safely. No provider-specific
+  client code, credential storage, or sync job exists anywhere yet — this
+  phase only makes sure adding one later is additive, not a redesign.
 - **Documents foundation only**: the `Document` model and
   `src/lib/storage` abstraction exist; there is no upload UI yet
   (that's a later phase per the roadmap below), and there is no AI
