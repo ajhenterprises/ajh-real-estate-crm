@@ -3,6 +3,7 @@ import type {
   ClientType,
   ContactType,
   TaskPriority,
+  TaskStatus,
   TransactionEventType,
   TransactionStatus,
   TransactionType,
@@ -53,6 +54,12 @@ export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
   NORMAL: "Normal",
   HIGH: "High",
   URGENT: "Urgent",
+};
+
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  PENDING: "Pending",
+  COMPLETED: "Completed",
+  CANCELLED: "Cancelled",
 };
 
 export const TRANSACTION_EVENT_TYPE_LABELS: Record<TransactionEventType, string> = {

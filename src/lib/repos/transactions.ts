@@ -43,7 +43,11 @@ export function getTransactionById(userId: string, transactionId: string) {
     include: {
       client: { include: { contact: true } },
       events: { orderBy: { date: "asc" } },
-      tasks: { orderBy: [{ status: "asc" }, { dueDate: "asc" }] },
+      // createdAt/id order (not status/dueDate) so checklist tasks group by
+      // category in the same order they were generated from templates —
+      // createMany assigns cuids sequentially, so id is a reliable
+      // tiebreaker when a whole checklist shares one createdAt instant.
+      tasks: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
       documents: { orderBy: { uploadedAt: "desc" } },
     },
   });

@@ -312,6 +312,16 @@ enum TaskPriority {
   URGENT
 }
 
+// Where a task came from. FUTURE_CONTRACT is reserved for the future
+// contract-extraction phase — nothing creates tasks with that source yet;
+// the value exists now so that phase doesn't need a Task schema change.
+enum TaskSource {
+  MANUAL
+  TRANSACTION_TEMPLATE
+  FUTURE_CONTRACT
+  OTHER
+}
+
 model Task {
   id            String       @id @default(cuid())
   title         String
@@ -320,9 +330,12 @@ model Task {
   priority      TaskPriority @default(NORMAL)
   dueDate       DateTime?
   completedDate DateTime?
-  // Where this task came from, e.g. "manual" now; a future task-template /
-  // checklist-generation engine can label generated tasks here.
-  source        String       @default("manual")
+  source        TaskSource   @default(MANUAL)
+  // Denormalized from the generating TaskTemplate's category (e.g. "Under
+  // Contract", "Inspection") so the transaction checklist can group tasks
+  // without a join, and grouping survives even if the template is later
+  // edited or deleted. Null for manual, non-checklist tasks.
+  category      String?
 
   assignedUserId String
   assignedUser   User   @relation(fields: [assignedUserId], references: [id], onDelete: Cascade)
@@ -336,16 +349,86 @@ model Task {
   transactionId String?
   transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 
+  // The template this task was generated from, if any. Nullable and
+  // SetNull-on-delete: a template can be retired without erasing the
+  // history of tasks it already produced. Paired with the unique
+  // constraint below, this is the duplicate-protection mechanism for
+  // checklist generation — Postgres allows unlimited rows with a NULL
+  // templateId (manual tasks), but at most one row per
+  // (transactionId, templateId) pair once both are set.
+  templateId String?
+  template   TaskTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([transactionId, templateId])
   @@index([assignedUserId])
   @@index([status])
   @@index([dueDate])
   @@index([contactId])
   @@index([clientId])
   @@index([transactionId])
+  @@index([templateId])
   @@map("tasks")
+}
+
+// ---------------------------------------------------------------------------
+// Task templates — the configurable checklist foundation. Rows here are
+// shared reference/configuration data for this CRM instance (like the
+// design tokens), not per-user business data, so there is no ownerId.
+// Nothing hard-codes a checklist into a page: transaction creation reads
+// the active templates for the transaction's type and generates real Task
+// rows from them (see src/lib/tasks/checklist.ts).
+// ---------------------------------------------------------------------------
+
+// How a template's relative due date is anchored, when it has one. Only
+// two anchors exist because only two dates are ever known at the moment a
+// transaction (and its checklist) is created — the creation instant itself
+// and whatever expected closing date was entered on the same form.
+// Deriving a due date from a specific contract-confirmed deadline
+// (inspection period, financing, ...) is future-phase work once
+// TransactionEvents carry agent-confirmed dates.
+enum TaskTemplateDueDateAnchor {
+  TRANSACTION_CREATED
+  EXPECTED_CLOSING_DATE
+}
+
+model TaskTemplate {
+  id  String @id @default(cuid())
+  // Stable identifier independent of the database id, so seeding is a
+  // plain upsert keyed on something meaningful — reordering or rewording
+  // a title never orphans the row or risks a duplicate insert.
+  key String @unique
+
+  transactionType TransactionType
+  // Free-form grouping label for the checklist UI (e.g. "Under Contract",
+  // "Inspection", "Closing"). Not an enum: buyer and seller checklists use
+  // slightly different category names, and new categories shouldn't need
+  // a migration.
+  category        String
+  title           String
+  description     String?
+  priority        TaskPriority    @default(NORMAL)
+
+  // Relative due-date rule. Both null (the default for this phase's seed
+  // data — see the phase notes) means "no due date": nothing here invents
+  // a legal deadline. When set, dueDateOffsetDays is added to the anchor
+  // date; if the anchor is EXPECTED_CLOSING_DATE and the transaction has
+  // none, the generated task simply gets no due date rather than a guess.
+  dueDateOffsetDays Int?
+  dueDateAnchor     TaskTemplateDueDateAnchor?
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  tasks Task[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([transactionType, isActive, sortOrder])
+  @@map("task_templates")
 }
 
 // ---------------------------------------------------------------------------

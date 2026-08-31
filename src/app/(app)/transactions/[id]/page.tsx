@@ -3,13 +3,17 @@ import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { getTransactionById } from "@/lib/repos/transactions";
 import { setTransactionEventStatusAction } from "@/lib/transactions/actions";
-import { completeTaskAction, reopenTaskAction } from "@/lib/tasks/actions";
+import { cancelTaskAction, completeTaskAction, reopenTaskAction } from "@/lib/tasks/actions";
+import { summarizeTaskProgress } from "@/lib/tasks/progress";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { ProgressBar } from "@/components/ui/progress-bar";
 import { AddEventForm } from "@/components/transactions/add-event-form";
+import { AddTaskForm } from "@/components/transactions/add-task-form";
 import { contactDisplayName, formatCurrency, formatDate, formatDateWithYear } from "@/lib/format";
 import {
+  TASK_PRIORITY_LABELS,
   TRANSACTION_EVENT_TYPE_LABELS,
   TRANSACTION_STATUS_LABELS,
   TRANSACTION_TYPE_LABELS,
@@ -24,6 +28,21 @@ export default async function TransactionDetailPage(props: PageProps<"/transacti
   if (!transaction) notFound();
 
   const nextPendingEvent = transaction.events.find((event) => event.status === "PENDING") ?? null;
+  const progress = summarizeTaskProgress(transaction.tasks);
+
+  // Preserves generation order within each category (see getTransactionById's
+  // tasks orderBy) and orders categories by first appearance, so a checklist
+  // generated from templates renders in the same order it was defined.
+  const checklistGroups: { category: string; tasks: typeof transaction.tasks }[] = [];
+  for (const task of transaction.tasks) {
+    const category = task.category ?? "Other";
+    let group = checklistGroups.find((g) => g.category === category);
+    if (!group) {
+      group = { category, tasks: [] };
+      checklistGroups.push(group);
+    }
+    group.tasks.push(task);
+  }
 
   const timeline = [
     { date: transaction.createdAt, label: "Transaction created" },
@@ -161,6 +180,100 @@ export default async function TransactionDetailPage(props: PageProps<"/transacti
           </Card>
 
           <Card>
+            <CardHeader title="Checklist" />
+            <div className="flex flex-col gap-3 border-b border-border p-5">
+              <ProgressBar complete={progress.complete} total={progress.total} />
+              <div className="flex flex-wrap gap-2">
+                <StatusBadge variant="attention" label={`${progress.overdue} Overdue`} />
+                <StatusBadge variant="upcoming" label={`${progress.upcoming} Upcoming`} />
+                <StatusBadge variant="on-track" label={`${progress.complete} Complete`} />
+              </div>
+            </div>
+            {transaction.tasks.length === 0 ? (
+              <div className="p-5">
+                <EmptyState
+                  title="No checklist tasks yet"
+                  description="Tasks tied to this transaction — generated from the buyer/seller checklist, or added manually — will show up here."
+                />
+              </div>
+            ) : (
+              <div className="flex flex-col">
+                {checklistGroups.map((group) => (
+                  <div key={group.category} className="border-b border-border last:border-b-0">
+                    <p className="bg-surface-muted px-5 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {group.category}
+                    </p>
+                    <div className="flex flex-col divide-y divide-border">
+                      {group.tasks.map((task) => {
+                        const isOverdue =
+                          task.status === "PENDING" && task.dueDate !== null && task.dueDate < new Date();
+                        return (
+                          <div key={task.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                            <Link href={`/tasks/${task.id}`} className="min-w-0 flex-1 hover:opacity-80">
+                              <p
+                                className={`truncate text-sm font-medium ${
+                                  task.status === "COMPLETED" || task.status === "CANCELLED"
+                                    ? "text-muted-foreground line-through"
+                                    : isOverdue
+                                      ? "text-status-attention"
+                                      : "text-foreground"
+                                }`}
+                              >
+                                {task.title}
+                              </p>
+                              <p className="truncate text-sm text-muted-foreground">
+                                {task.dueDate ? `Due ${formatDate(task.dueDate)}` : "No due date"} ·{" "}
+                                {TASK_PRIORITY_LABELS[task.priority]}
+                              </p>
+                            </Link>
+                            {task.status === "PENDING" ? (
+                              <div className="flex shrink-0 gap-2">
+                                <form action={completeTaskAction}>
+                                  <input type="hidden" name="taskId" value={task.id} />
+                                  <button
+                                    type="submit"
+                                    className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
+                                  >
+                                    Complete
+                                  </button>
+                                </form>
+                                <form action={cancelTaskAction}>
+                                  <input type="hidden" name="taskId" value={task.id} />
+                                  <button
+                                    type="submit"
+                                    className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
+                                  >
+                                    Cancel
+                                  </button>
+                                </form>
+                              </div>
+                            ) : task.status === "COMPLETED" ? (
+                              <form action={reopenTaskAction} className="shrink-0">
+                                <input type="hidden" name="taskId" value={task.id} />
+                                <button
+                                  type="submit"
+                                  className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
+                                >
+                                  Reopen
+                                </button>
+                              </form>
+                            ) : (
+                              <span className="shrink-0 text-xs text-muted-foreground">Cancelled</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="border-t border-border">
+              <AddTaskForm transactionId={transaction.id} />
+            </div>
+          </Card>
+
+          <Card>
             <CardHeader title="Documents" />
             {transaction.documents.length === 0 ? (
               <div className="p-5">
@@ -196,59 +309,15 @@ export default async function TransactionDetailPage(props: PageProps<"/transacti
 
         <div className="flex flex-col gap-6">
           <Card>
-            <CardHeader title="Tasks" />
-            {transaction.tasks.length === 0 ? (
-              <div className="p-5">
-                <EmptyState
-                  title="No tasks yet"
-                  description="Tasks tied to this transaction will show up here."
-                />
+            <CardHeader title="Transaction Progress" />
+            <div className="flex flex-col gap-3 p-5">
+              <ProgressBar complete={progress.complete} total={progress.total} />
+              <div className="flex flex-col gap-2">
+                <StatusBadge variant="attention" label={`${progress.overdue} Overdue`} />
+                <StatusBadge variant="upcoming" label={`${progress.upcoming} Upcoming`} />
+                <StatusBadge variant="on-track" label={`${progress.complete} Complete`} />
               </div>
-            ) : (
-              <div className="flex flex-col divide-y divide-border">
-                {transaction.tasks.map((task) => (
-                  <div key={task.id} className="flex items-center justify-between gap-3 px-5 py-3">
-                    <div className="min-w-0">
-                      <p
-                        className={`truncate text-sm font-medium ${
-                          task.status === "COMPLETED"
-                            ? "text-muted-foreground line-through"
-                            : "text-foreground"
-                        }`}
-                      >
-                        {task.title}
-                      </p>
-                      <p className="truncate text-sm text-muted-foreground">
-                        {task.dueDate ? `Due ${formatDate(task.dueDate)}` : "No due date"}
-                      </p>
-                    </div>
-                    {task.status === "PENDING" ? (
-                      <form action={completeTaskAction} className="shrink-0">
-                        <input type="hidden" name="taskId" value={task.id} />
-                        <button
-                          type="submit"
-                          className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
-                        >
-                          Complete
-                        </button>
-                      </form>
-                    ) : task.status === "COMPLETED" ? (
-                      <form action={reopenTaskAction} className="shrink-0">
-                        <input type="hidden" name="taskId" value={task.id} />
-                        <button
-                          type="submit"
-                          className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
-                        >
-                          Reopen
-                        </button>
-                      </form>
-                    ) : (
-                      <span className="shrink-0 text-xs text-muted-foreground">Cancelled</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+            </div>
           </Card>
         </div>
       </div>

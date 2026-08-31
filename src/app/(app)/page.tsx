@@ -8,7 +8,9 @@ import {
   getTasksDueToday,
   getUpcomingClosings,
   getUpcomingDeadlines,
+  getUpcomingTasks,
 } from "@/lib/repos/dashboard";
+import { summarizeTaskProgress } from "@/lib/tasks/progress";
 import { Card, CardHeader, StatTile } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -23,6 +25,40 @@ function greeting(): string {
   return "Good evening";
 }
 
+function TaskRow({
+  task,
+}: {
+  task: {
+    id: string;
+    title: string;
+    dueDate: Date | null;
+    transaction: { propertyAddress: string | null } | null;
+    client: { contact: { firstName: string; lastName: string } } | null;
+  };
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-5 py-3">
+      <Link href={`/tasks/${task.id}`} className="min-w-0 flex-1 hover:opacity-80">
+        <p className="truncate text-sm font-medium text-foreground">{task.title}</p>
+        <p className="truncate text-sm text-muted-foreground">
+          {task.dueDate ? `Due ${formatDate(task.dueDate)}` : "No due date"} ·{" "}
+          {task.transaction?.propertyAddress ??
+            (task.client ? contactDisplayName(task.client.contact) : "General task")}
+        </p>
+      </Link>
+      <form action={completeTaskAction} className="shrink-0">
+        <input type="hidden" name="taskId" value={task.id} />
+        <button
+          type="submit"
+          className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
+        >
+          Complete
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export default async function DashboardPage() {
   const session = await requireSession();
   const userId = session.user.id;
@@ -32,6 +68,7 @@ export default async function DashboardPage() {
     overdueTasks,
     overdueDeadlines,
     tasksDueToday,
+    upcomingTasks,
     upcomingDeadlines,
     activeTransactions,
     upcomingClosings,
@@ -40,12 +77,12 @@ export default async function DashboardPage() {
     getOverdueTasks(userId),
     getOverdueDeadlines(userId),
     getTasksDueToday(userId),
+    getUpcomingTasks(userId),
     getUpcomingDeadlines(userId),
     getActiveTransactions(userId),
     getUpcomingClosings(userId),
   ]);
 
-  const needsAttentionCount = overdueTasks.length + overdueDeadlines.length;
   const firstName = session.user.name?.split(" ")[0] ?? "there";
 
   return (
@@ -72,50 +109,49 @@ export default async function DashboardPage() {
       </div>
 
       <Card>
-        <CardHeader title="Needs attention" />
+        <CardHeader title="Overdue Deadlines" />
         <div className="flex flex-col divide-y divide-border">
-          {needsAttentionCount === 0 ? (
+          {overdueDeadlines.length === 0 ? (
             <div className="p-5">
               <EmptyState
-                title="Nothing needs attention"
-                description="Overdue tasks and deadlines will show up here as soon as something slips."
+                title="Nothing overdue"
+                description="Overdue transaction deadlines will show up here as soon as something slips."
               />
             </div>
           ) : (
-            <>
-              {overdueDeadlines.map((event) => (
-                <div key={event.id} className="flex items-center justify-between px-5 py-3">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{event.title}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatDate(event.date)} ·{" "}
-                      {contactDisplayName(event.transaction.client.contact)} —{" "}
-                      {event.transaction.propertyAddress ?? "No address on file"}
-                    </p>
-                  </div>
-                  <StatusBadge variant="attention" />
+            overdueDeadlines.map((event) => (
+              <div key={event.id} className="flex items-center justify-between px-5 py-3">
+                <div>
+                  <p className="text-sm font-medium text-foreground">{event.title}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {formatDate(event.date)} ·{" "}
+                    {contactDisplayName(event.transaction.client.contact)} —{" "}
+                    {event.transaction.propertyAddress ?? "No address on file"}
+                  </p>
                 </div>
-              ))}
-              {overdueTasks.map((task) => (
-                <div key={task.id} className="flex items-center justify-between px-5 py-3">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{task.title}</p>
-                    <p className="text-sm text-muted-foreground">
-                      Due {task.dueDate ? formatDate(task.dueDate) : "—"}
-                      {task.client ? ` · ${contactDisplayName(task.client.contact)}` : ""}
-                    </p>
-                  </div>
-                  <StatusBadge variant="attention" />
-                </div>
-              ))}
-            </>
+                <StatusBadge variant="attention" />
+              </div>
+            ))
           )}
         </div>
       </Card>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
-          <CardHeader title="Today's tasks" />
+          <CardHeader title="Overdue Tasks" />
+          <div className="flex flex-col divide-y divide-border">
+            {overdueTasks.length === 0 ? (
+              <div className="p-5">
+                <EmptyState title="No overdue tasks" description="Tasks past their due date will show up here." />
+              </div>
+            ) : (
+              overdueTasks.map((task) => <TaskRow key={task.id} task={task} />)
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Today's Tasks" />
           <div className="flex flex-col divide-y divide-border">
             {tasksDueToday.length === 0 ? (
               <div className="p-5">
@@ -125,32 +161,31 @@ export default async function DashboardPage() {
                 />
               </div>
             ) : (
-              tasksDueToday.map((task) => (
-                <div key={task.id} className="flex items-center justify-between gap-3 px-5 py-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">{task.title}</p>
-                    <p className="truncate text-sm text-muted-foreground">
-                      {task.transaction?.propertyAddress ??
-                        (task.client ? contactDisplayName(task.client.contact) : "General task")}
-                    </p>
-                  </div>
-                  <form action={completeTaskAction} className="shrink-0">
-                    <input type="hidden" name="taskId" value={task.id} />
-                    <button
-                      type="submit"
-                      className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
-                    >
-                      Complete
-                    </button>
-                  </form>
-                </div>
-              ))
+              tasksDueToday.map((task) => <TaskRow key={task.id} task={task} />)
+            )}
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader title="Upcoming Tasks" />
+          <div className="flex flex-col divide-y divide-border">
+            {upcomingTasks.length === 0 ? (
+              <div className="p-5">
+                <EmptyState
+                  title="No upcoming tasks"
+                  description="Pending tasks due after today will show up here."
+                />
+              </div>
+            ) : (
+              upcomingTasks.map((task) => <TaskRow key={task.id} task={task} />)
             )}
           </div>
         </Card>
 
         <Card>
-          <CardHeader title="Upcoming deadlines" />
+          <CardHeader title="Upcoming Deadlines" />
           <div className="flex flex-col divide-y divide-border">
             {upcomingDeadlines.length === 0 ? (
               <div className="p-5">
@@ -195,7 +230,7 @@ export default async function DashboardPage() {
           ) : (
             activeTransactions.map((transaction) => {
               const nextDeadline = transaction.events[0] ?? null;
-              const completedTasks = transaction.tasks.filter((t) => t.status === "COMPLETED").length;
+              const taskProgress = summarizeTaskProgress(transaction.tasks);
               return (
                 <Link
                   key={transaction.id}
@@ -212,10 +247,15 @@ export default async function DashboardPage() {
                       {formatCurrency(transaction.purchasePrice?.toString()) &&
                         ` · ${formatCurrency(transaction.purchasePrice?.toString())}`}
                     </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {transaction.tasks.length > 0
-                        ? `${completedTasks}/${transaction.tasks.length} tasks complete`
+                    <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      {taskProgress.total > 0
+                        ? `${taskProgress.complete}/${taskProgress.total} tasks complete`
                         : "No tasks yet"}
+                      {taskProgress.overdue > 0 ? (
+                        <span className="font-medium text-status-attention">
+                          · {taskProgress.overdue} overdue
+                        </span>
+                      ) : null}
                       {transaction.expectedClosingDate &&
                         ` · Closing ${formatDate(transaction.expectedClosingDate)}`}
                     </p>

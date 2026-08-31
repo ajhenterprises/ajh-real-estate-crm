@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
 import { TRANSACTION_EVENT_TYPE_LABELS } from "@/lib/labels";
+import { generateChecklistForTransaction } from "@/lib/tasks/checklist";
 
 const TRANSACTION_TYPES = ["BUYER", "SELLER", "OTHER"] as const;
 const TRANSACTION_STATUSES = [
@@ -90,12 +91,17 @@ export async function createTransactionAction(
     return { error: "That client could not be found." };
   }
 
-  const transaction = await prisma.transaction.create({
-    data: { ...fields, clientId: client.id, ownerId: session.user.id },
+  const transaction = await prisma.$transaction(async (tx) => {
+    const created = await tx.transaction.create({
+      data: { ...fields, clientId: client.id, ownerId: session.user.id },
+    });
+    await generateChecklistForTransaction(tx, created);
+    return created;
   });
 
   revalidatePath(`/clients/${client.id}`);
   revalidatePath("/transactions");
+  revalidatePath("/tasks");
   redirect(`/transactions/${transaction.id}`);
 }
 

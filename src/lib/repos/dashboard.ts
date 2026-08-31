@@ -101,6 +101,23 @@ export async function getTasksDueToday(userId: string) {
   });
 }
 
+export async function getUpcomingTasks(userId: string) {
+  const endOfToday = new Date();
+  endOfToday.setHours(0, 0, 0, 0);
+  endOfToday.setDate(endOfToday.getDate() + 1);
+
+  return prisma.task.findMany({
+    where: {
+      assignedUserId: userId,
+      status: "PENDING",
+      dueDate: { gte: endOfToday },
+    },
+    orderBy: { dueDate: "asc" },
+    include: { transaction: true, client: { include: { contact: true } } },
+    take: 8,
+  });
+}
+
 export async function getUpcomingDeadlines(userId: string) {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -140,7 +157,7 @@ export async function getActiveTransactions(userId: string) {
     include: {
       client: { include: { contact: true } },
       events: { where: { status: "PENDING" }, orderBy: { date: "asc" }, take: 1 },
-      tasks: { select: { status: true } },
+      tasks: { select: { status: true, dueDate: true } },
     },
     take: 10,
   });
