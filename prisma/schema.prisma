@@ -1,0 +1,400 @@
+// AJH Real Estate CRM — database schema
+// learn more about Prisma schema: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Users & auth
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  AGENT
+  ADMIN
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         UserRole @default(AGENT)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  contacts      Contact[]
+  clients       Client[]
+  transactions  Transaction[]
+  tasks         Task[]
+  documents     Document[]
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Contacts — any person, regardless of source
+// ---------------------------------------------------------------------------
+
+// Where a contact originated. Kept open-ended so future integrations
+// (BoldTrail, Follow Up Boss, ...) can be added without a schema rewrite.
+enum ContactSource {
+  MANUAL
+  BOLDTRAIL
+  FOLLOW_UP_BOSS
+  WEBSITE
+  REFERRAL
+  OTHER
+}
+
+// A general categorization tag for the contact. Independent of whether a
+// Client record exists for them — a contact can be tagged CLIENT before or
+// after the operational Client relationship is created.
+enum ContactType {
+  LEAD
+  CLIENT
+  PAST_CLIENT
+  VENDOR
+  OTHER
+}
+
+model Contact {
+  id             String        @id @default(cuid())
+  firstName      String
+  lastName       String
+  preferredName  String?
+  email          String?
+  phone          String?
+  secondaryPhone String?
+  address        String?
+  city           String?
+  state          String?
+  zip            String?
+  contactType    ContactType   @default(LEAD)
+  source         ContactSource @default(MANUAL)
+  // Identifier of this record in the source system (e.g. the BoldTrail or
+  // Follow Up Boss contact ID). Lets future sync jobs match records instead
+  // of creating duplicates. Null for contacts entered manually.
+  sourceContactId String?
+  notes          String?
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  client            Client?
+  tasks             Task[]
+  documents         Document[]
+  externalSyncLinks ExternalSyncLink[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([email])
+  @@index([phone])
+  @@index([source, sourceContactId])
+  @@map("contacts")
+}
+
+// ---------------------------------------------------------------------------
+// Clients — a contact that has an active/past business relationship
+// ---------------------------------------------------------------------------
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ClientType {
+  BUYER
+  SELLER
+  BUYER_AND_SELLER
+}
+
+model Client {
+  id     String @id @default(cuid())
+  status ClientStatus @default(ACTIVE)
+  type   ClientType
+  notes  String?
+
+  contactId String  @unique
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  // Denormalized from contact.ownerId so authorization checks and list
+  // queries never need to join through Contact.
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  transactions Transaction[]
+  tasks        Task[]
+  documents    Document[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([status])
+  @@map("clients")
+}
+
+// ---------------------------------------------------------------------------
+// Transactions — the heart of the application
+// ---------------------------------------------------------------------------
+
+enum TransactionType {
+  BUYER
+  SELLER
+  OTHER
+}
+
+enum TransactionStatus {
+  PROSPECT
+  ACTIVE
+  UNDER_CONTRACT
+  PENDING
+  CLOSED
+  CANCELLED
+}
+
+model Transaction {
+  id     String             @id @default(cuid())
+  type   TransactionType
+  status TransactionStatus  @default(PROSPECT)
+
+  propertyAddress String?
+  propertyCity    String?
+  propertyState   String?
+  propertyZip     String?
+  mlsNumber       String?
+
+  purchasePrice Decimal? @db.Decimal(12, 2)
+  listingPrice  Decimal? @db.Decimal(12, 2)
+
+  contractEffectiveDate DateTime?
+  expectedClosingDate   DateTime?
+  actualClosingDate     DateTime?
+
+  notes String?
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  // Denormalized from client.ownerId for authorization/list queries.
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  events    TransactionEvent[]
+  tasks     Task[]
+  documents Document[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([clientId])
+  @@index([status])
+  @@index([expectedClosingDate])
+  @@map("transactions")
+}
+
+// ---------------------------------------------------------------------------
+// Transaction events / deadlines — flexible, not fixed columns
+// ---------------------------------------------------------------------------
+
+enum TransactionEventType {
+  CONTRACT_EFFECTIVE
+  EARNEST_MONEY_DUE
+  INSPECTION_PERIOD_START
+  INSPECTION_PERIOD_END
+  FINANCING_DEADLINE
+  APPRAISAL_DEADLINE
+  TITLE_DEADLINE
+  CLOSING_DATE
+  FINAL_WALKTHROUGH
+  POSSESSION_DATE
+  OTHER
+}
+
+enum TransactionEventStatus {
+  PENDING
+  COMPLETED
+  MISSED
+  WAIVED
+}
+
+model TransactionEvent {
+  id          String                  @id @default(cuid())
+  eventType   TransactionEventType
+  title       String
+  description String?
+  date        DateTime
+  status      TransactionEventStatus  @default(PENDING)
+  // Where this date came from — "manual" today; future contract-extraction
+  // workflows can record their own source label here without a schema change.
+  source      String                  @default("manual")
+  notes       String?
+
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([transactionId])
+  @@index([date])
+  @@index([eventType])
+  @@map("transaction_events")
+}
+
+// ---------------------------------------------------------------------------
+// Tasks — not transaction-only; may attach to a contact, client, transaction,
+// or stand alone as a general CRM task.
+// ---------------------------------------------------------------------------
+
+enum TaskStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+model Task {
+  id            String       @id @default(cuid())
+  title         String
+  description   String?
+  status        TaskStatus   @default(PENDING)
+  priority      TaskPriority @default(NORMAL)
+  dueDate       DateTime?
+  completedDate DateTime?
+  // Where this task came from, e.g. "manual" now; a future task-template /
+  // checklist-generation engine can label generated tasks here.
+  source        String       @default("manual")
+
+  assignedUserId String
+  assignedUser   User   @relation(fields: [assignedUserId], references: [id], onDelete: Cascade)
+
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  transactionId String?
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assignedUserId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([contactId])
+  @@index([clientId])
+  @@index([transactionId])
+  @@map("tasks")
+}
+
+// ---------------------------------------------------------------------------
+// Documents — foundation only; no AI parsing in this phase.
+// ---------------------------------------------------------------------------
+
+enum DocumentType {
+  CONTRACT
+  DISCLOSURE
+  ADDENDUM
+  INSPECTION_REPORT
+  APPRAISAL
+  TITLE_DOCUMENT
+  CLOSING_STATEMENT
+  OTHER
+}
+
+enum DocumentStatus {
+  UPLOADED
+  REVIEWED
+  ARCHIVED
+}
+
+model Document {
+  id           String         @id @default(cuid())
+  filename     String
+  documentType DocumentType   @default(OTHER)
+  // Opaque reference into the storage backend (local path or object-storage
+  // key). The storage backend itself is an abstraction — see src/lib/storage.
+  storagePath  String
+  status       DocumentStatus @default(UPLOADED)
+  // Free-form metadata bag (mime type, size, page count, ...) so the schema
+  // doesn't need to grow a column per storage/detail concern.
+  metadata     Json?
+
+  uploadedByUserId String
+  uploadedByUser   User   @relation(fields: [uploadedByUserId], references: [id], onDelete: Cascade)
+  uploadedAt       DateTime @default(now())
+
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  transactionId String?
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([transactionId])
+  @@index([clientId])
+  @@index([contactId])
+  @@index([uploadedByUserId])
+  @@map("documents")
+}
+
+// ---------------------------------------------------------------------------
+// Integration layer foundation — no provider-specific logic on core models.
+// Tracks the sync relationship between an external CRM record and a local
+// Contact so future BoldTrail / Follow Up Boss sync jobs can match instead
+// of duplicating records.
+// ---------------------------------------------------------------------------
+
+enum ExternalProvider {
+  BOLDTRAIL
+  FOLLOW_UP_BOSS
+  OTHER
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCED
+  ERROR
+}
+
+model ExternalSyncLink {
+  id         String            @id @default(cuid())
+  provider   ExternalProvider
+  externalId String
+  lastSyncedAt DateTime?
+  syncStatus SyncStatus        @default(PENDING)
+  syncError  String?
+
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([provider, externalId])
+  @@index([contactId])
+  @@map("external_sync_links")
+}
