@@ -12,31 +12,48 @@ export async function getDashboardSummary(userId: string) {
   const endOfToday = new Date(startOfToday);
   endOfToday.setDate(endOfToday.getDate() + 1);
 
-  const [activeTransactionsCount, tasksDueTodayCount, upcomingDeadlinesCount] =
-    await Promise.all([
-      prisma.transaction.count({
-        where: {
-          ownerId: userId,
-          status: { in: ["ACTIVE", "UNDER_CONTRACT", "PENDING"] },
-        },
-      }),
-      prisma.task.count({
-        where: {
-          assignedUserId: userId,
-          status: "PENDING",
-          dueDate: { gte: startOfToday, lt: endOfToday },
-        },
-      }),
-      prisma.transactionEvent.count({
-        where: {
-          transaction: { ownerId: userId },
-          status: "PENDING",
-          date: { gte: startOfToday },
-        },
-      }),
-    ]);
+  const [
+    activeTransactionsCount,
+    tasksDueTodayCount,
+    upcomingDeadlinesCount,
+    activeClientsCount,
+    overdueTasksCount,
+  ] = await Promise.all([
+    prisma.transaction.count({
+      where: {
+        ownerId: userId,
+        status: { in: ["ACTIVE", "UNDER_CONTRACT", "PENDING"] },
+      },
+    }),
+    prisma.task.count({
+      where: {
+        assignedUserId: userId,
+        status: "PENDING",
+        dueDate: { gte: startOfToday, lt: endOfToday },
+      },
+    }),
+    prisma.transactionEvent.count({
+      where: {
+        transaction: { ownerId: userId },
+        status: "PENDING",
+        date: { gte: startOfToday },
+      },
+    }),
+    prisma.client.count({
+      where: { ownerId: userId, status: "ACTIVE" },
+    }),
+    prisma.task.count({
+      where: { assignedUserId: userId, status: "PENDING", dueDate: { lt: startOfToday } },
+    }),
+  ]);
 
-  return { activeTransactionsCount, tasksDueTodayCount, upcomingDeadlinesCount };
+  return {
+    activeTransactionsCount,
+    tasksDueTodayCount,
+    upcomingDeadlinesCount,
+    activeClientsCount,
+    overdueTasksCount,
+  };
 }
 
 export async function getOverdueTasks(userId: string) {
@@ -96,6 +113,22 @@ export async function getUpcomingDeadlines(userId: string) {
     },
     orderBy: { date: "asc" },
     include: { transaction: { include: { client: { include: { contact: true } } } } },
+    take: 8,
+  });
+}
+
+export async function getUpcomingClosings(userId: string) {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  return prisma.transaction.findMany({
+    where: {
+      ownerId: userId,
+      status: { in: ["ACTIVE", "UNDER_CONTRACT", "PENDING"] },
+      expectedClosingDate: { gte: startOfToday },
+    },
+    orderBy: { expectedClosingDate: "asc" },
+    include: { client: { include: { contact: true } } },
     take: 8,
   });
 }

@@ -1,5 +1,6 @@
+import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
-import { listContacts } from "@/lib/repos/lists";
+import { listContacts } from "@/lib/repos/contacts";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { contactDisplayName } from "@/lib/format";
@@ -11,11 +12,19 @@ export default async function ContactsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">Contacts</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Everyone in your CRM, regardless of where they came from.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Contacts</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Everyone in your CRM, regardless of where they came from.
+          </p>
+        </div>
+        <Link
+          href="/contacts/new"
+          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+        >
+          New Contact
+        </Link>
       </div>
 
       <Card>
@@ -29,7 +38,11 @@ export default async function ContactsPage() {
         ) : (
           <div className="flex flex-col divide-y divide-border">
             {contacts.map((contact) => (
-              <div key={contact.id} className="flex items-center justify-between px-5 py-3">
+              <Link
+                key={contact.id}
+                href={`/contacts/${contact.id}`}
+                className="flex items-center justify-between px-5 py-3 hover:bg-surface-muted"
+              >
                 <div>
                   <p className="text-sm font-medium text-foreground">
                     {contactDisplayName(contact)}
@@ -42,7 +55,7 @@ export default async function ContactsPage() {
                 <span className="text-xs text-muted-foreground">
                   {CONTACT_SOURCE_LABELS[contact.source]}
                 </span>
-              </div>
+              </Link>
             ))}
           </div>
         )}

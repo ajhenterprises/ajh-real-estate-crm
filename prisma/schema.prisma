@@ -149,12 +149,14 @@ model ContactActivity {
 enum ClientStatus {
   ACTIVE
   INACTIVE
+  PAST
 }
 
 enum ClientType {
   BUYER
   SELLER
   BUYER_AND_SELLER
+  OTHER
 }
 
 model Client {

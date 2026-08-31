@@ -6,6 +6,7 @@ import {
   getOverdueDeadlines,
   getOverdueTasks,
   getTasksDueToday,
+  getUpcomingClosings,
   getUpcomingDeadlines,
 } from "@/lib/repos/dashboard";
 import { Card, CardHeader, StatTile } from "@/components/ui/card";
@@ -26,15 +27,23 @@ export default async function DashboardPage() {
   const session = await requireSession();
   const userId = session.user.id;
 
-  const [summary, overdueTasks, overdueDeadlines, tasksDueToday, upcomingDeadlines, activeTransactions] =
-    await Promise.all([
-      getDashboardSummary(userId),
-      getOverdueTasks(userId),
-      getOverdueDeadlines(userId),
-      getTasksDueToday(userId),
-      getUpcomingDeadlines(userId),
-      getActiveTransactions(userId),
-    ]);
+  const [
+    summary,
+    overdueTasks,
+    overdueDeadlines,
+    tasksDueToday,
+    upcomingDeadlines,
+    activeTransactions,
+    upcomingClosings,
+  ] = await Promise.all([
+    getDashboardSummary(userId),
+    getOverdueTasks(userId),
+    getOverdueDeadlines(userId),
+    getTasksDueToday(userId),
+    getUpcomingDeadlines(userId),
+    getActiveTransactions(userId),
+    getUpcomingClosings(userId),
+  ]);
 
   const needsAttentionCount = overdueTasks.length + overdueDeadlines.length;
   const firstName = session.user.name?.split(" ")[0] ?? "there";
@@ -54,9 +63,11 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <StatTile label="Active clients" value={summary.activeClientsCount} />
         <StatTile label="Active transactions" value={summary.activeTransactionsCount} />
         <StatTile label="Tasks due today" value={summary.tasksDueTodayCount} />
+        <StatTile label="Overdue tasks" value={summary.overdueTasksCount} />
         <StatTile label="Upcoming deadlines" value={summary.upcomingDeadlinesCount} />
       </div>
 
@@ -186,7 +197,11 @@ export default async function DashboardPage() {
               const nextDeadline = transaction.events[0] ?? null;
               const completedTasks = transaction.tasks.filter((t) => t.status === "COMPLETED").length;
               return (
-                <div key={transaction.id} className="flex items-center justify-between gap-4 px-5 py-4">
+                <Link
+                  key={transaction.id}
+                  href={`/transactions/${transaction.id}`}
+                  className="flex items-center justify-between gap-4 px-5 py-4 hover:bg-surface-muted"
+                >
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-foreground">
                       {contactDisplayName(transaction.client.contact)}
@@ -213,9 +228,43 @@ export default async function DashboardPage() {
                       </span>
                     )}
                   </div>
-                </div>
+                </Link>
               );
             })
+          )}
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader title="Upcoming Closings" />
+        <div className="flex flex-col divide-y divide-border">
+          {upcomingClosings.length === 0 ? (
+            <div className="p-5">
+              <EmptyState
+                title="No upcoming closings"
+                description="Transactions with an expected closing date will show up here as they approach."
+              />
+            </div>
+          ) : (
+            upcomingClosings.map((transaction) => (
+              <Link
+                key={transaction.id}
+                href={`/transactions/${transaction.id}`}
+                className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-surface-muted"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">
+                    {contactDisplayName(transaction.client.contact)}
+                  </p>
+                  <p className="truncate text-sm text-muted-foreground">
+                    {transaction.propertyAddress ?? "No address on file"}
+                  </p>
+                </div>
+                <span className="shrink-0 text-sm text-muted-foreground">
+                  {transaction.expectedClosingDate ? formatDate(transaction.expectedClosingDate) : "—"}
+                </span>
+              </Link>
+            ))
           )}
         </div>
       </Card>
