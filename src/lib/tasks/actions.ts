@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
+import { shouldMarkTaskDueDateOverridden } from "@/lib/tasks/due-date-override";
 
 /**
  * Every mutation here re-derives the current user from the session and
@@ -154,9 +155,17 @@ export async function updateTaskAction(
   const completedDate =
     fields.status === "COMPLETED" ? (existing.completedDate ?? new Date()) : null;
 
+  const isOverridden = shouldMarkTaskDueDateOverridden(existing, fields.dueDate);
+
   await prisma.task.update({
     where: { id: existing.id },
-    data: { ...fields, completedDate, clientId: relations.clientId, transactionId: relations.transactionId },
+    data: {
+      ...fields,
+      completedDate,
+      isOverridden,
+      clientId: relations.clientId,
+      transactionId: relations.transactionId,
+    },
   });
 
   revalidatePath("/tasks");
@@ -220,4 +229,33 @@ export async function addTransactionTaskAction(
   revalidatePath("/tasks");
   revalidatePath("/");
   return {};
+}
+
+/**
+ * Discards a manual due-date override on a contract-derived task, restoring
+ * the due date to whatever its linked TransactionEvent's current date is.
+ * Mirrors resetTransactionEventOverrideAction's contract with the same
+ * event. A no-op for a task with no linked event.
+ */
+export async function resetTaskDueDateOverrideAction(formData: FormData) {
+  const session = await requireSession();
+
+  const taskId = formData.get("taskId");
+  if (typeof taskId !== "string") return;
+
+  const task = await prisma.task.findFirst({
+    where: { id: taskId, assignedUserId: session.user.id },
+    include: { transactionEvent: { select: { date: true } } },
+  });
+  if (!task || !task.transactionEvent) return;
+
+  await prisma.task.update({
+    where: { id: task.id },
+    data: { dueDate: task.transactionEvent.date, isOverridden: false },
+  });
+
+  revalidatePath("/tasks");
+  revalidatePath(`/tasks/${task.id}`);
+  revalidatePath("/");
+  if (task.transactionId) revalidatePath(`/transactions/${task.transactionId}`);
 }

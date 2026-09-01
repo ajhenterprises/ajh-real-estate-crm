@@ -247,6 +247,12 @@ export default async function TransactionDetailPage(props: PageProps<"/transacti
                                 {task.dueDate ? `Due ${formatDate(task.dueDate)}` : "No due date"} ·{" "}
                                 {TASK_PRIORITY_LABELS[task.priority]}
                               </p>
+                              {task.transactionEvent ? (
+                                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                  Linked to: {task.transactionEvent.title}
+                                  {task.isOverridden ? " · manually overridden" : ""}
+                                </p>
+                              ) : null}
                             </Link>
                             {task.status === "PENDING" ? (
                               <div className="flex shrink-0 gap-2">

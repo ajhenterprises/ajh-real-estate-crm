@@ -17,6 +17,7 @@ export interface TaskListFilters {
 const taskInclude = {
   transaction: { select: { id: true, propertyAddress: true } },
   client: { include: { contact: true } },
+  transactionEvent: { select: { id: true, eventType: true, title: true, date: true } },
 } as const;
 
 function startOfToday(): Date {

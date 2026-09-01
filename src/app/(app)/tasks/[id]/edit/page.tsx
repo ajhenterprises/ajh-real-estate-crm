@@ -36,6 +36,7 @@ export default async function EditTaskPage(props: PageProps<"/tasks/[id]/edit">)
           options={options}
           submitLabel="Save changes"
           pendingLabel="Saving…"
+          linkedEventTitle={task.transactionEvent?.title}
           defaultValues={{
             title: task.title,
             description: task.description ?? undefined,

@@ -2,7 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { getTaskById } from "@/lib/repos/tasks";
-import { cancelTaskAction, completeTaskAction, reopenTaskAction } from "@/lib/tasks/actions";
+import {
+  cancelTaskAction,
+  completeTaskAction,
+  reopenTaskAction,
+  resetTaskDueDateOverrideAction,
+} from "@/lib/tasks/actions";
 import { Card, CardHeader } from "@/components/ui/card";
 import { contactDisplayName, formatDateWithYear } from "@/lib/format";
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from "@/lib/labels";
@@ -97,6 +102,50 @@ export default async function TaskDetailPage(props: PageProps<"/tasks/[id]">) {
           </div>
         ) : null}
       </Card>
+
+      {task.transactionEvent ? (
+        <Card>
+          <CardHeader title="Linked Contract Deadline" />
+          <div className="flex flex-col gap-2 p-5">
+            <p className="text-sm text-foreground">
+              This task&rsquo;s due date is generated from{" "}
+              {task.transaction ? (
+                <Link
+                  href={`/transactions/${task.transaction.id}/events/${task.transactionEvent.id}/edit`}
+                  className="text-accent hover:underline"
+                >
+                  {task.transactionEvent.title}
+                </Link>
+              ) : (
+                task.transactionEvent.title
+              )}
+              .
+            </p>
+            {task.isOverridden ? (
+              <div className="mt-1 flex items-center justify-between gap-3 rounded-md bg-status-upcoming-bg px-3 py-2">
+                <p className="text-sm text-status-upcoming">
+                  This due date has been manually overridden and will no longer update when the
+                  contract is re-confirmed.
+                </p>
+                <form action={resetTaskDueDateOverrideAction}>
+                  <input type="hidden" name="taskId" value={task.id} />
+                  <button
+                    type="submit"
+                    className="shrink-0 rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
+                  >
+                    Reset to calculated date
+                  </button>
+                </form>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Changing the due date on the edit page will mark this task as manually overridden,
+                so re-confirming the contract won&rsquo;t move it.
+              </p>
+            )}
+          </div>
+        </Card>
+      ) : null}
     </div>
   );
 }

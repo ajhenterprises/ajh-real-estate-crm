@@ -47,7 +47,10 @@ export function getTransactionById(userId: string, transactionId: string) {
       // category in the same order they were generated from templates —
       // createMany assigns cuids sequentially, so id is a reliable
       // tiebreaker when a whole checklist shares one createdAt instant.
-      tasks: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
+      tasks: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        include: { transactionEvent: { select: { title: true } } },
+      },
       documents: {
         orderBy: { uploadedAt: "desc" },
         include: {

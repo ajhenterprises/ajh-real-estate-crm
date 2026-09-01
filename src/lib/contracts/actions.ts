@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
 import { calculateContractEvents } from "@/lib/contracts/dates";
+import { isContractTaskEventType, reconcileContractDerivedTask } from "@/lib/contracts/task-sync";
 
 const emptyToUndefined = (value: unknown) => (value === "" ? undefined : value);
 
@@ -161,35 +162,45 @@ export async function confirmContractInformationAction(formData: FormData) {
         },
       });
 
-      if (!existingEvent) {
-        await tx.transactionEvent.create({
-          data: {
-            transactionId: info.transactionId,
-            contractInformationId: info.id,
-            eventType: candidate.eventType,
-            title: candidate.title,
-            date: candidate.date,
-            source: "contract_information",
-            isCalculated: candidate.isCalculated,
-            calculationBasis: candidate.calculationBasis,
-            calculatedDate: candidate.isCalculated ? candidate.date : null,
-          },
-        });
-        continue;
-      }
+      const event = existingEvent
+        ? await tx.transactionEvent.update({
+            where: { id: existingEvent.id },
+            data: {
+              title: candidate.title,
+              isCalculated: candidate.isCalculated,
+              calculationBasis: candidate.calculationBasis,
+              calculatedDate: candidate.isCalculated ? candidate.date : null,
+              // Only move the actual deadline date if the agent hasn't
+              // deliberately overridden it — an override survives re-confirmation.
+              ...(existingEvent.isOverridden ? {} : { date: candidate.date }),
+            },
+          })
+        : await tx.transactionEvent.create({
+            data: {
+              transactionId: info.transactionId,
+              contractInformationId: info.id,
+              eventType: candidate.eventType,
+              title: candidate.title,
+              date: candidate.date,
+              source: "contract_information",
+              isCalculated: candidate.isCalculated,
+              calculationBasis: candidate.calculationBasis,
+              calculatedDate: candidate.isCalculated ? candidate.date : null,
+            },
+          });
 
-      await tx.transactionEvent.update({
-        where: { id: existingEvent.id },
-        data: {
-          title: candidate.title,
-          isCalculated: candidate.isCalculated,
-          calculationBasis: candidate.calculationBasis,
-          calculatedDate: candidate.isCalculated ? candidate.date : null,
-          // Only move the actual deadline date if the agent hasn't
-          // deliberately overridden it — an override survives re-confirmation.
-          ...(existingEvent.isOverridden ? {} : { date: candidate.date }),
-        },
-      });
+      // Contract-derived tasks (Phase 6) track the event's actual persisted
+      // date — which already respects an event-level override above — never
+      // the raw candidate date, so a manually-overridden deadline can never
+      // silently drag its task to a different date than what the Important
+      // Dates section shows.
+      if (isContractTaskEventType(candidate.eventType)) {
+        await reconcileContractDerivedTask(tx, {
+          event: { id: event.id, title: event.title, date: event.date },
+          transactionId: info.transactionId,
+          assignedUserId: info.ownerId,
+        });
+      }
     }
 
     await tx.contractInformation.update({
@@ -200,5 +211,6 @@ export async function confirmContractInformationAction(formData: FormData) {
 
   revalidatePath(`/transactions/${info.transactionId}`);
   revalidatePath(`/transactions/${info.transactionId}/contract-information/${info.id}`);
+  revalidatePath("/tasks");
   revalidatePath("/");
 }

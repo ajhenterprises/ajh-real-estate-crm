@@ -311,6 +311,10 @@ model TransactionEvent {
   transactionId String
   transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 
+  // The task generated from this event, if any (Phase 6). Back-relation
+  // only — Task.transactionEventId is the owning, unique side.
+  task Task?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -386,6 +390,20 @@ model Task {
   // (transactionId, templateId) pair once both are set.
   templateId String?
   template   TaskTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  // The TransactionEvent this task was generated from, if any (Phase 6:
+  // contract-derived tasks, source FUTURE_CONTRACT). Unique + nullable/
+  // SetNull, same pattern as templateId above: at most one task per event,
+  // but an event can be deleted without deleting the task it produced.
+  transactionEventId String?           @unique
+  transactionEvent   TransactionEvent? @relation(fields: [transactionEventId], references: [id], onDelete: SetNull)
+
+  // True once an agent has manually changed this task's due date away from
+  // what contract-derived reconciliation last set it to. Only a due-date
+  // change sets this — editing title/priority/notes/status never does.
+  // While true, re-confirming the linked contract never overwrites the due
+  // date; see reconcileContractDerivedTask in src/lib/contracts/task-sync.ts.
+  isOverridden Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
