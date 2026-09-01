@@ -1,8 +1,11 @@
+import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import { listDocuments } from "@/lib/repos/lists";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { contactDisplayName, formatDateWithYear } from "@/lib/format";
+import { DOCUMENT_TYPE_LABELS } from "@/lib/labels";
+import { formatFileSize } from "@/lib/documents/validation";
 
 export default async function DocumentsPage() {
   const session = await requireSession();
@@ -27,20 +30,54 @@ export default async function DocumentsPage() {
           </div>
         ) : (
           <div className="flex flex-col divide-y divide-border">
-            {documents.map((document) => (
-              <div key={document.id} className="flex items-center justify-between px-5 py-3">
-                <div>
-                  <p className="text-sm font-medium text-foreground">{document.filename}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {document.transaction?.propertyAddress ??
-                      (document.client ? contactDisplayName(document.client.contact) : "Unattached")}
-                  </p>
+            {documents.map((document) => {
+              const owner = document.transaction
+                ? { label: document.transaction.propertyAddress ?? "Transaction", href: `/transactions/${document.transaction.id}` }
+                : document.client
+                  ? { label: contactDisplayName(document.client.contact), href: `/clients/${document.client.id}` }
+                  : document.contact
+                    ? { label: contactDisplayName(document.contact), href: `/contacts/${document.contact.id}` }
+                    : null;
+
+              return (
+                <div
+                  key={document.id}
+                  className="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">{document.filename}</p>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {DOCUMENT_TYPE_LABELS[document.documentType]} · {formatDateWithYear(document.uploadedAt)} ·{" "}
+                      {formatFileSize(document.fileSize)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    {owner ? (
+                      <Link
+                        href={owner.href}
+                        className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
+                      >
+                        {owner.label}
+                      </Link>
+                    ) : null}
+                    <a
+                      href={`/api/documents/${document.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
+                    >
+                      View
+                    </a>
+                    <a
+                      href={`/api/documents/${document.id}?download=1`}
+                      className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
+                    >
+                      Download
+                    </a>
+                  </div>
                 </div>
-                <span className="text-xs text-muted-foreground">
-                  {formatDateWithYear(document.uploadedAt)}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>

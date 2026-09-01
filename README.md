@@ -65,14 +65,32 @@ this codebase.
   (that's a later phase per the roadmap below), and there is no AI
   parsing anywhere in the plan for it.
 
-## Roadmap (not yet built)
+## Roadmap
 
-Phase 2: Contacts + client workflow (create/edit forms) · Phase 3:
-Transaction workflow · Phase 4: Contract/document upload · Phase 5: Contract
-data extraction (deterministic PDF text extraction + user review/confirm —
-**not AI**) · Phase 6: Task templates · Phase 7: Deadline/reminder engine ·
-Phase 8: Follow Up Boss integration · Phase 9: BoldTrail integration · Phase
-10: Calendar/email/notification integrations.
+This section previously listed a fixed phase numbering drawn up before
+development started; it fell out of sync with what was actually built (most
+notably, it still called task templates an unbuilt "Phase 6" after they had
+already shipped). What's below reflects the phases actually delivered, in
+order:
+
+- **Phase 1** — Application foundation: stack, schema, auth, design system,
+  navigation shell.
+- **Phase 2** — Made the Contacts/Leads model integration-ready (source
+  tracking, sync-link foundation) without implementing any integration.
+- **Phase 3** — Contact → Client → Transaction workflow.
+- **Phase 4** — Task management: global task list, transaction checklists,
+  configurable task templates, default buyer/seller checklists.
+- **Phase 5** — Document upload/storage and Contract Information: a
+  deterministic (**not AI**) contract date-calculation engine with full
+  calculation transparency and user override.
+- **Phase 6** — Contract-derived tasks: confirming a contract automatically
+  generates and reconciles tasks tied to its calculated deadlines.
+- **Phase 7** — Contact relationship & follow-up layer: explicit follow-up
+  dates, manual activity logging (calls/emails/texts/showings/notes), a
+  dashboard "Needs Follow-Up" view, and Contacts list search/filter/sort.
+
+Future phases are decided and scoped one at a time rather than fixed in
+advance here.
 
 ## Getting started
 

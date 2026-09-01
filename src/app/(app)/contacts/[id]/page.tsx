@@ -6,9 +6,14 @@ import { convertToClientAction } from "@/lib/contacts/actions";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Select } from "@/components/ui/form";
-import { contactDisplayName, formatDateWithYear } from "@/lib/format";
-import { CONTACT_TYPE_LABELS, CLIENT_TYPE_LABELS, TRANSACTION_STATUS_LABELS } from "@/lib/labels";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { FollowUpForm } from "@/components/contacts/follow-up-form";
+import { LogActivityForm } from "@/components/contacts/log-activity-form";
+import { contactDisplayName, formatDateWithYear, toDateInputValue } from "@/lib/format";
+import { CONTACT_TYPE_LABELS, CLIENT_TYPE_LABELS, TRANSACTION_STATUS_LABELS, CONTACT_ACTIVITY_TYPE_LABELS } from "@/lib/labels";
 import { CONTACT_SOURCE_LABELS } from "@/lib/integrations/providers";
+import { deriveFollowUpStatus } from "@/lib/status";
+import { getLastContactedActivity } from "@/lib/contacts/activity";
 
 export default async function ContactDetailPage(props: PageProps<"/contacts/[id]">) {
   const session = await requireSession();
@@ -16,6 +21,9 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
 
   const contact = await getContactById(session.user.id, id);
   if (!contact) notFound();
+
+  const followUpStatus = deriveFollowUpStatus(contact.nextFollowUpDate);
+  const lastContacted = getLastContactedActivity(contact.activities);
 
   return (
     <div className="flex flex-col gap-6">
@@ -31,9 +39,18 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
           <span className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
             {CONTACT_TYPE_LABELS[contact.contactType]}
           </span>
+          {followUpStatus === "overdue" || followUpStatus === "due-today" ? (
+            <StatusBadge
+              variant="attention"
+              label={followUpStatus === "overdue" ? "Follow-up overdue" : "Follow up today"}
+            />
+          ) : null}
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
           Source: {CONTACT_SOURCE_LABELS[contact.source]}
+          {lastContacted
+            ? ` · Last contacted ${formatDateWithYear(lastContacted.createdAt)} (${CONTACT_ACTIVITY_TYPE_LABELS[lastContacted.type]})`
+            : " · Not contacted yet"}
         </p>
       </div>
 
@@ -91,25 +108,42 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
               <div className="p-5">
                 <EmptyState
                   title="No activity yet"
-                  description="Actions on this contact — created, notes, status changes, synced updates — will show up here."
+                  description="Calls, emails, texts, showings, and notes you log will show up here, alongside system events like status changes."
                 />
               </div>
             ) : (
               <div className="flex flex-col divide-y divide-border">
                 {contact.activities.map((activity) => (
                   <div key={activity.id} className="px-5 py-3">
-                    <p className="text-sm text-foreground">{activity.description}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDateWithYear(activity.createdAt)} · {CONTACT_SOURCE_LABELS[activity.source]}
+                    <p className="text-sm text-foreground">
+                      <span className="font-medium">{CONTACT_ACTIVITY_TYPE_LABELS[activity.type]}</span>
+                      {activity.description && activity.description !== CONTACT_ACTIVITY_TYPE_LABELS[activity.type]
+                        ? ` — ${activity.description}`
+                        : ""}
                     </p>
+                    <p className="text-xs text-muted-foreground">{formatDateWithYear(activity.createdAt)}</p>
                   </div>
                 ))}
               </div>
             )}
+            <div className="border-t border-border">
+              <LogActivityForm contactId={contact.id} />
+            </div>
           </Card>
         </div>
 
         <div className="flex flex-col gap-6">
+          <Card>
+            <CardHeader title="Follow-Up" />
+            <div className="p-5">
+              <FollowUpForm
+                contactId={contact.id}
+                defaultDate={toDateInputValue(contact.nextFollowUpDate)}
+                hasFollowUpDate={contact.nextFollowUpDate !== null}
+              />
+            </div>
+          </Card>
+
           <Card>
             <CardHeader title="Client Status" />
             <div className="p-5">

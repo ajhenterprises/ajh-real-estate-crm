@@ -1,5 +1,10 @@
-import "server-only";
+// Deliberately no `import "server-only"` here — getContactsNeedingFollowUp
+// takes an optional trailing Prisma-client override so it can be exercised
+// directly against the dedicated test database in src/test/db.ts (that
+// guard throws when imported outside a Next.js server build). Only ever
+// imported by the dashboard server component — see src/app/(app)/page.tsx.
 import { prisma } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma/client";
 
 /**
  * Every query here is scoped to `ownerId`/`assignedUserId` for the current
@@ -159,6 +164,29 @@ export async function getActiveTransactions(userId: string) {
       events: { where: { status: "PENDING" }, orderBy: { date: "asc" }, take: 1 },
       tasks: { select: { status: true, dueDate: true } },
     },
+    take: 10,
+  });
+}
+
+/**
+ * Contacts whose agent-set `nextFollowUpDate` is today or earlier — never
+ * contacts with no follow-up date set (that is not "needs follow-up," per
+ * the Phase 7 spec: no invented staleness threshold). Oldest/most-overdue
+ * first, same `take` as the Overdue Tasks/Deadlines sections above.
+ *
+ * Takes an optional trailing Prisma-client override (defaulting to the real
+ * app singleton) so this exact function — not a reimplementation of it —
+ * can be exercised against the dedicated test database; see src/test/db.ts.
+ */
+export async function getContactsNeedingFollowUp(userId: string, db: Prisma.TransactionClient = prisma) {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const endOfToday = new Date(startOfToday);
+  endOfToday.setDate(endOfToday.getDate() + 1);
+
+  return db.contact.findMany({
+    where: { ownerId: userId, nextFollowUpDate: { lt: endOfToday } },
+    orderBy: { nextFollowUpDate: "asc" },
     take: 10,
   });
 }

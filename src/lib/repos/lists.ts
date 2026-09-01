@@ -10,6 +10,13 @@ export function listDocuments(userId: string) {
   return prisma.document.findMany({
     where: { uploadedByUserId: userId },
     orderBy: { uploadedAt: "desc" },
-    include: { transaction: true, client: { include: { contact: true } } },
+    include: {
+      transaction: true,
+      client: { include: { contact: true } },
+      // A document attached only to a Contact (never a Client/Transaction)
+      // had no owning-record context to show or link to on the global list
+      // before this — see the Documents-list fix in documents/page.tsx.
+      contact: true,
+    },
   });
 }

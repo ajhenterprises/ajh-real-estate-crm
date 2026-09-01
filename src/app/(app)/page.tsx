@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireSession } from "@/lib/auth/session";
 import {
   getActiveTransactions,
+  getContactsNeedingFollowUp,
   getDashboardSummary,
   getOverdueDeadlines,
   getOverdueTasks,
@@ -16,7 +17,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { completeTaskAction } from "@/lib/tasks/actions";
 import { contactDisplayName, formatCurrency, formatDate } from "@/lib/format";
-import { deriveDeadlineStatus } from "@/lib/status";
+import { deriveDeadlineStatus, deriveFollowUpStatus } from "@/lib/status";
+import { CONTACT_TYPE_LABELS } from "@/lib/labels";
 
 function greeting(): string {
   const hour = new Date().getHours();
@@ -72,6 +74,7 @@ export default async function DashboardPage() {
     upcomingDeadlines,
     activeTransactions,
     upcomingClosings,
+    contactsNeedingFollowUp,
   ] = await Promise.all([
     getDashboardSummary(userId),
     getOverdueTasks(userId),
@@ -81,6 +84,7 @@ export default async function DashboardPage() {
     getUpcomingDeadlines(userId),
     getActiveTransactions(userId),
     getUpcomingClosings(userId),
+    getContactsNeedingFollowUp(userId),
   ]);
 
   const firstName = session.user.name?.split(" ")[0] ?? "there";
@@ -132,6 +136,43 @@ export default async function DashboardPage() {
                 <StatusBadge variant="attention" />
               </div>
             ))
+          )}
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader title="Needs Follow-Up" />
+        <div className="flex flex-col divide-y divide-border">
+          {contactsNeedingFollowUp.length === 0 ? (
+            <div className="p-5">
+              <EmptyState
+                title="Nobody needs follow-up right now"
+                description="Contacts with a follow-up date today or earlier will show up here."
+              />
+            </div>
+          ) : (
+            contactsNeedingFollowUp.map((contact) => {
+              const followUpStatus = deriveFollowUpStatus(contact.nextFollowUpDate);
+              return (
+                <Link
+                  key={contact.id}
+                  href={`/contacts/${contact.id}`}
+                  className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-surface-muted"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">{contactDisplayName(contact)}</p>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {CONTACT_TYPE_LABELS[contact.contactType]} · Follow up{" "}
+                      {contact.nextFollowUpDate ? formatDate(contact.nextFollowUpDate) : ""}
+                    </p>
+                  </div>
+                  <StatusBadge
+                    variant="attention"
+                    label={followUpStatus === "overdue" ? "Overdue" : "Today"}
+                  />
+                </Link>
+              );
+            })
           )}
         </div>
       </Card>

@@ -6,6 +6,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
 import { Prisma } from "@/generated/prisma/client";
+import { createContactActivity, setContactFollowUpDate } from "@/lib/contacts/mutations";
+import { CONTACT_ACTIVITY_DEFAULT_DESCRIPTIONS } from "@/lib/contacts/activity";
 
 const CONTACT_TYPES = ["LEAD", "CLIENT", "PAST_CLIENT", "VENDOR", "OTHER"] as const;
 const CONTACT_SOURCES = [
@@ -129,4 +131,94 @@ export async function convertToClientAction(formData: FormData) {
   revalidatePath(`/contacts/${contact.id}`);
   revalidatePath("/clients");
   redirect(`/clients/${clientId}`);
+}
+
+const optionalDate = z.preprocess(
+  emptyToUndefined,
+  z
+    .string()
+    .refine((value) => !Number.isNaN(Date.parse(value)), "Enter a valid date")
+    .transform((value) => new Date(value))
+    .optional(),
+);
+
+const setFollowUpSchema = z.object({
+  contactId: z.string().min(1),
+  nextFollowUpDate: optionalDate,
+});
+
+export interface ContactFollowUpState {
+  error?: string;
+}
+
+/**
+ * Sets, changes, or clears (submit with the date field blank) a contact's
+ * follow-up date. Stays on the contact page rather than redirecting — this
+ * is a quick inline action, not a full form flow. The actual owner-scoped
+ * mutation lives in src/lib/contacts/mutations.ts so it's independently
+ * testable against the dedicated test database.
+ */
+export async function setContactFollowUpDateAction(
+  _prevState: ContactFollowUpState | undefined,
+  formData: FormData,
+): Promise<ContactFollowUpState> {
+  const session = await requireSession();
+
+  const parsed = setFollowUpSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Enter a valid date." };
+  }
+
+  const { contactId, nextFollowUpDate } = parsed.data;
+
+  const updated = await setContactFollowUpDate(session.user.id, contactId, nextFollowUpDate ?? null);
+  if (!updated) {
+    return { error: "That contact could not be found." };
+  }
+
+  revalidatePath(`/contacts/${contactId}`);
+  revalidatePath("/");
+  return {};
+}
+
+const CONTACT_ACTIVITY_LOG_TYPES = ["CALL", "EMAIL", "TEXT", "SHOWING", "NOTE_ADDED"] as const;
+
+const logActivitySchema = z.object({
+  contactId: z.string().min(1),
+  type: z.enum(CONTACT_ACTIVITY_LOG_TYPES),
+  notes: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+});
+
+export interface LogContactActivityState {
+  error?: string;
+}
+
+/**
+ * Logs a manual, agent-entered interaction (call/email/text/showing/note).
+ * Blank notes fall back to a type-specific default phrase rather than
+ * requiring text — description stays a required, meaningful string without
+ * a separate nullable "notes" column. Only these five types are loggable
+ * here; CREATED/STATUS_CHANGED/SYNCED/OTHER remain system-only.
+ */
+export async function logContactActivityAction(
+  _prevState: LogContactActivityState | undefined,
+  formData: FormData,
+): Promise<LogContactActivityState> {
+  const session = await requireSession();
+
+  const parsed = logActivitySchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Check the form and try again." };
+  }
+
+  const { contactId, type, notes } = parsed.data;
+  const description = notes ?? CONTACT_ACTIVITY_DEFAULT_DESCRIPTIONS[type];
+
+  const activity = await createContactActivity(session.user.id, contactId, type, description);
+  if (!activity) {
+    return { error: "That contact could not be found." };
+  }
+
+  revalidatePath(`/contacts/${contactId}`);
+  return {};
 }

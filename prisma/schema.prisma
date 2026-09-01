@@ -90,6 +90,12 @@ model Contact {
   sourceContactId String?
   notes           String?
 
+  // Explicit, agent-entered "follow up with this person on this date."
+  // Never inferred, never defaulted — null means no follow-up is scheduled,
+  // not "overdue." See src/lib/status.ts's deriveFollowUpStatus for the
+  // overdue/today/upcoming rule this drives.
+  nextFollowUpDate DateTime?
+
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
@@ -106,6 +112,7 @@ model Contact {
   @@index([email])
   @@index([phone])
   @@index([source, sourceContactId])
+  @@index([nextFollowUpDate])
   @@map("contacts")
 }
 
@@ -119,6 +126,15 @@ enum ContactActivityType {
   STATUS_CHANGED
   SYNCED
   OTHER
+  // Phase 7: agent-logged interaction types. Only these five (plus the
+  // pre-existing NOTE_ADDED, reused rather than duplicated) count as a
+  // personal touchpoint for "last contacted" — see
+  // src/lib/contacts/activity.ts's CONTACT_TOUCHPOINT_ACTIVITY_TYPES.
+  // CREATED/STATUS_CHANGED/SYNCED/OTHER are system-generated and never do.
+  CALL
+  EMAIL
+  TEXT
+  SHOWING
 }
 
 model ContactActivity {

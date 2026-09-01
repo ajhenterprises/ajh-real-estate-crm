@@ -1,6 +1,7 @@
 import type {
   ClientStatus,
   ClientType,
+  ContactActivityType,
   ContactType,
   ContractPeriodDayType,
   DocumentStatus,
@@ -22,6 +23,18 @@ export const CONTACT_TYPE_LABELS: Record<ContactType, string> = {
   PAST_CLIENT: "Past client",
   VENDOR: "Vendor",
   OTHER: "Other",
+};
+
+export const CONTACT_ACTIVITY_TYPE_LABELS: Record<ContactActivityType, string> = {
+  CREATED: "Created",
+  NOTE_ADDED: "Note",
+  STATUS_CHANGED: "Status changed",
+  SYNCED: "Synced",
+  OTHER: "Other",
+  CALL: "Call",
+  EMAIL: "Email",
+  TEXT: "Text",
+  SHOWING: "Showing",
 };
 
 export const CLIENT_STATUS_LABELS: Record<ClientStatus, string> = {
