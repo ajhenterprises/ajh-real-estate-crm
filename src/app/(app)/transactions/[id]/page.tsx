@@ -4,7 +4,8 @@ import { requireSession } from "@/lib/auth/session";
 import { getTransactionById } from "@/lib/repos/transactions";
 import { setTransactionEventStatusAction } from "@/lib/transactions/actions";
 import { cancelTaskAction, completeTaskAction, reopenTaskAction } from "@/lib/tasks/actions";
-import { archiveDocumentAction, deleteDocumentAction } from "@/lib/documents/actions";
+import { archiveDocumentAction, deleteDocumentAction, restoreDocumentAction } from "@/lib/documents/actions";
+import { DOCUMENT_DELETION_RETENTION_DAYS } from "@/lib/documents/mutations";
 import { createContractInformationAction } from "@/lib/contracts/actions";
 import { summarizeTaskProgress } from "@/lib/tasks/progress";
 import { deriveContractStatus, CONTRACT_STATUS_LABELS } from "@/lib/contracts/status";
@@ -320,6 +321,14 @@ export default async function TransactionDetailPage(props: PageProps<"/transacti
                         {DOCUMENT_TYPE_LABELS[document.documentType]} · {formatDateWithYear(document.uploadedAt)} by{" "}
                         {document.uploadedByUser.name} · {formatFileSize(document.fileSize)}
                         {document.status !== "UPLOADED" ? ` · ${DOCUMENT_STATUS_LABELS[document.status]}` : ""}
+                        {document.status === "PENDING_DELETION" && document.deletionInitiatedAt
+                          ? ` · eligible for permanent deletion on ${formatDateWithYear(
+                              new Date(
+                                document.deletionInitiatedAt.getTime() +
+                                  DOCUMENT_DELETION_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+                              ),
+                            )}`
+                          : ""}
                       </p>
                       {document.description ? (
                         <p className="truncate text-xs text-muted-foreground">{document.description}</p>
@@ -361,26 +370,40 @@ export default async function TransactionDetailPage(props: PageProps<"/transacti
                           </form>
                         )
                       ) : null}
-                      {document.status !== "ARCHIVED" ? (
-                        <form action={archiveDocumentAction}>
+                      {document.status === "PENDING_DELETION" ? (
+                        <form action={restoreDocumentAction}>
                           <input type="hidden" name="documentId" value={document.id} />
                           <button
                             type="submit"
-                            className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-surface-muted"
+                            className="rounded-md border border-accent px-2.5 py-1 text-xs font-medium text-accent hover:bg-surface-muted"
                           >
-                            Archive
+                            Restore
                           </button>
                         </form>
-                      ) : null}
-                      <form action={deleteDocumentAction}>
-                        <input type="hidden" name="documentId" value={document.id} />
-                        <button
-                          type="submit"
-                          className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-status-attention hover:bg-surface-muted"
-                        >
-                          Delete
-                        </button>
-                      </form>
+                      ) : (
+                        <>
+                          {document.status !== "ARCHIVED" ? (
+                            <form action={archiveDocumentAction}>
+                              <input type="hidden" name="documentId" value={document.id} />
+                              <button
+                                type="submit"
+                                className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-surface-muted"
+                              >
+                                Archive
+                              </button>
+                            </form>
+                          ) : null}
+                          <form action={deleteDocumentAction}>
+                            <input type="hidden" name="documentId" value={document.id} />
+                            <button
+                              type="submit"
+                              className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-status-attention hover:bg-surface-muted"
+                            >
+                              Delete
+                            </button>
+                          </form>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}

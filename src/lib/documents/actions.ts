@@ -6,7 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
 import { getStorageAdapter } from "@/lib/storage";
-import { deleteDocument } from "@/lib/documents/mutations";
+import { deleteDocument, restoreDocument } from "@/lib/documents/mutations";
 import {
   ALLOWED_DOCUMENT_MIME_TYPES,
   MAX_DOCUMENT_SIZE_BYTES,
@@ -117,15 +117,17 @@ export async function archiveDocumentAction(formData: FormData) {
 }
 
 /**
- * Permanently deletes a document — file and database row both — unlike
- * archive above, which only flips a status flag and never touches storage.
- * The actual owner-scoped, failure-ordered deletion logic lives in
+ * Soft-deletes a document — unlike archive above (which only flips a
+ * status flag), this starts the 45-day permanent-deletion countdown, but
+ * the file itself is untouched in storage until
+ * scripts/cleanup-expired-documents.ts actually removes it, days later.
+ * The owner-scoped, protection-checked logic lives in
  * src/lib/documents/mutations.ts so it's independently testable against
- * the dedicated test database. A storage error other than "already
- * missing" leaves both the row and file in place for the agent to retry;
- * nothing here surfaces that as a form error today (this is a
+ * the dedicated test database. A protected document (e.g. one with
+ * contract information built from it) isn't scheduled for deletion at
+ * all; nothing here surfaces that as a form error today (this is a
  * fire-and-forget action, matching archiveDocumentAction's shape above),
- * but it never silently orphans a file either way.
+ * but the document itself is simply left alone either way.
  */
 export async function deleteDocumentAction(formData: FormData) {
   const session = await requireSession();
@@ -134,7 +136,27 @@ export async function deleteDocumentAction(formData: FormData) {
   if (typeof documentId !== "string") return;
 
   const result = await deleteDocument(session.user.id, documentId);
-  if (result.outcome !== "deleted") return;
+  if (result.outcome !== "pending-deletion") return;
+
+  revalidatePath("/documents");
+  if (result.transactionId) revalidatePath(`/transactions/${result.transactionId}`);
+}
+
+/**
+ * Cancels a pending deletion and returns the document to UPLOADED. Never
+ * touches storage — soft delete never did either. Safe to submit more
+ * than once: a document that isn't (or is no longer) pending deletion
+ * simply isn't matched, so a repeat submission is a silent no-op, the
+ * same convention every other fire-and-forget action here already uses.
+ */
+export async function restoreDocumentAction(formData: FormData) {
+  const session = await requireSession();
+
+  const documentId = formData.get("documentId");
+  if (typeof documentId !== "string") return;
+
+  const result = await restoreDocument(session.user.id, documentId);
+  if (result.outcome !== "restored") return;
 
   revalidatePath("/documents");
   if (result.transactionId) revalidatePath(`/transactions/${result.transactionId}`);

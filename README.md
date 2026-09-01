@@ -72,21 +72,8 @@ this codebase.
   identical regardless of what time zone the app happens to be deployed in,
   and is deliberately scoped to date-only semantics — timestamp fields like
   `createdAt`/`updatedAt`/`completedDate`/`confirmedAt` are unaffected.
-- **Document deletion is file-first, DB-row-second, and checks deletion
-  protection first**: `deleteDocument` (`src/lib/documents/mutations.ts`)
-  removes the physical file before the database row, treating "already
-  missing" (`ENOENT`) as success and aborting before touching the row on
-  any other storage error. This means a failure can only ever leave a
-  stale-but-harmless DB row, never an orphaned file with no trace of it —
-  see Backup & Recovery below for the one exception (direct database
-  administration bypassing this path) and its manual cleanup tool. Before
-  any of that, it checks whether the document is protected from deletion
-  at all — today that means a `ContractInformation` record built from it
-  (`onDelete: Restrict` in the schema); this check running *before* the
-  file delete, not after, is itself a fix (see git history/commit message
-  for the bug it closes) and is the intended extension point for a future
-  document-carrying feature (e.g. a not-yet-built tax/expense record) that
-  needs its own, different retention policy — see Document Storage below.
+- **Document deletion is soft, protected, and recoverable for 45 days**:
+  see Document Deletion & Retention below for the full lifecycle.
 
 ## Roadmap
 
@@ -193,18 +180,90 @@ this exact storage layer and bucket, the same way `Contact`/`Client`/
 ownership check — never a second storage system.
 
 Retention is designed the same way, and is already proven, not just
-planned: `ContractInformation` documents are protected from deletion via
-`onDelete: Restrict` in the schema, and `deleteDocument`
-(`src/lib/documents/mutations.ts`) checks for that relation *before*
-touching storage — never after, which was itself a bug this fixed (a
-protected file was previously destroyed before the database constraint
-ever got a chance to block anything). A future retention policy — e.g. a
-tax/expense record's documents needing to survive longer, or under
-different rules, than an ordinary project document — plugs into that same
-pre-storage-delete check. No retention rules are implemented for a
-tax/expense feature today, because that feature doesn't exist yet; the
-point is only that adding one later is a small, additive change to an
-existing, already-working check, not a redesign.
+planned — see Document Deletion & Retention below for the full lifecycle
+and `checkDocumentDeletionProtection`, the single gate a future retention
+rule (e.g. a tax/expense record's receipts needing to survive longer, or
+under different rules, than an ordinary project document) would extend.
+No such rule is implemented today, because that feature doesn't exist
+yet; the point is only that adding one later is a small, additive change
+to an existing, already-working check, not a redesign.
+
+## Document Deletion & Retention
+
+Deleting a document is a two-phase, 45-day-recoverable process — never
+immediate:
+
+1. **Soft delete.** An authorized user "deletes" a document
+   (`deleteDocument`, `src/lib/documents/mutations.ts`): after
+   `checkDocumentDeletionProtection` passes, the row moves to
+   `PENDING_DELETION` (`DocumentStatus`) with `deletionInitiatedAt` and
+   `deletionInitiatedByUserId` recorded. **The R2/storage object is not
+   touched at this step.** A protected document (see below) isn't even
+   scheduled — the user gets the same "protected" outcome immediately.
+2. **Restore**, any time before permanent deletion runs
+   (`restoreDocument`): moves the row straight back to `UPLOADED` and
+   clears both deletion-tracking fields. Also never touches storage —
+   there's nothing to undo there. Safe to call more than once; restoring
+   a document that isn't pending deletion is a no-op.
+3. **Permanent deletion**, `DOCUMENT_DELETION_RETENTION_DAYS` (45) days
+   after step 1, and only then: `cleanupExpiredDocuments` finds every
+   document that has been `PENDING_DELETION` for at least 45 days,
+   **re-checks `checkDocumentDeletionProtection` fresh for each one right
+   before deleting anything** (never trusting protection state from when
+   deletion was initiated — a document can become protected during the
+   45-day window), then deletes the storage object before the database
+   row (the same ENOENT-tolerant ordering and failure semantics
+   `deleteDocument` always used: a storage failure other than "already
+   missing" is recorded and that document is left untouched for the next
+   run, never reported as deleted). One document's failure never stops
+   the rest of the batch.
+
+**Protection.** `checkDocumentDeletionProtection`
+(`src/lib/documents/mutations.ts`) is the single, centralized gate both
+soft delete and permanent deletion call, immediately before any
+state-changing action. Today it has exactly one rule: a document with a
+`ContractInformation` record built from it (`onDelete: Restrict` in the
+schema) can never be deleted — not soft-deleted, and the 45-day timer
+never overrides it. This is the intended extension point for a future
+document-carrying feature's own retention rule (e.g. a tax/expense
+record's receipts, or a future "protected brand asset" flag) — another
+existence/flag check added to that same function. No brand-asset concept
+exists anywhere in this codebase today (confirmed by search), so nothing
+was added for it; the extension point is ready whenever one exists.
+
+**Running cleanup.** `npm run db:cleanup-expired-documents` runs a real
+cleanup pass (add `-- --dry-run` to preview without deleting anything).
+Unlike `db:find-orphaned-documents`, it performs its real work by
+default — completing a deletion a user already initiated 45+ days ago is
+the entire point. Like every other script in `scripts/`, it is never
+invoked automatically by the running application; **no scheduler is
+configured anywhere in this codebase.** Running it on a 45-day-relevant
+cadence (daily is plenty) is the deploying environment's own
+responsibility — a cron job, Vercel Cron once a project exists, a
+scheduled GitHub Actions workflow, or whatever mechanism that environment
+already has.
+
+**Auditability.** Every run's console output — one line per document,
+including every failure — is this operation's audit trail, the same
+convention `backup-database.ts` and `find-orphaned-documents.ts` already
+use; there's no separate audit table. Soft-delete and restore events are
+additionally recorded on the document itself, appended to
+`Document.metadata` (already a general-purpose "detail bag" per its own
+schema comment, reused here rather than adding a new table) — who
+initiated deletion also has its own dedicated column
+(`deletionInitiatedByUserId`) since that's needed for the protection/
+ownership logic itself, not just for audit purposes.
+
+**Orphaned R2 objects.** This feature does not introduce a new way to
+orphan a storage object: the file-before-row ordering above means a
+failure can only ever leave a stale `PENDING_DELETION` row with its file
+still present (discoverable, harmless — the next cleanup run will finish
+the job), never a file with no trace of it. `db:find-orphaned-documents`
+remains local-filesystem-only (see Document Storage above); it is not
+extended to scan R2 by this change, and this change does not
+automatically delete anything it would find. A report-only R2-bucket
+equivalent, if ever needed, is a separate tool, deliberately not built
+here.
 
 ## Getting started
 
@@ -235,6 +294,7 @@ npm run dev             # http://localhost:3000
 | `npm run db:backup` | Dump the database at `DATABASE_URL` to a timestamped `.sql` file — see Backup & Recovery |
 | `npm run db:restore -- <file.sql>` | Restore a dump produced by `db:backup` — see Backup & Recovery |
 | `npm run db:find-orphaned-documents` | Report (or, with `-- --delete`, remove) storage files with no matching `Document` row — see Backup & Recovery |
+| `npm run db:cleanup-expired-documents` | Permanently delete documents past the 45-day soft-delete retention window (add `-- --dry-run` to preview) — see Document Deletion & Retention |
 
 ## Backup & Recovery
 

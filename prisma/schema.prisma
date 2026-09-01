@@ -33,6 +33,7 @@ model User {
   transactions                 Transaction[]
   tasks                        Task[]
   documents                    Document[]
+  documentsDeletionInitiated   Document[]            @relation("DocumentDeletionInitiator")
   integrations                 Integration[]
   contractInformationOwned     ContractInformation[] @relation("ContractInformationOwner")
   contractInformationConfirmed ContractInformation[] @relation("ContractInformationConfirmedBy")
@@ -512,24 +513,59 @@ enum DocumentStatus {
   UPLOADED
   REVIEWED
   ARCHIVED
+  // Soft-deleted: an authorized user initiated deletion. The physical file
+  // is untouched in storage; only scripts/cleanup-expired-documents.ts
+  // (see src/lib/documents/mutations.ts's cleanupExpiredDocuments), run on
+  // an external schedule, ever removes it — and only after the 45-day
+  // retention window elapses and the deletion-protection gate still
+  // passes at that moment. restoreDocument moves a document straight back
+  // to UPLOADED; there is no distinct "restored" status.
+  PENDING_DELETION
 }
 
-// Document deletion (Phase 8): src/lib/documents/mutations.ts's deleteDocument
-// is the only application code path that intentionally removes a Document —
-// it checks deletion-protection relations (see contractInformation below),
-// then deletes the physical file, then this row, so the two can never
-// silently diverge for an in-app deletion (see that file's own comment for
-// the exact failure-order reasoning).
+// Document deletion/retention lifecycle: src/lib/documents/mutations.ts is
+// the only application code path that intentionally removes a Document.
+// Deletion is two-phase, not immediate:
+//   1. deleteDocument (soft delete) — an authorized user "deletes" a
+//      document: after checkDocumentDeletionProtection passes, the row
+//      moves to PENDING_DELETION with deletionInitiatedAt/
+//      deletionInitiatedByUserId recorded. Storage is never touched here.
+//   2. cleanupExpiredDocuments (hard delete) — run by
+//      scripts/cleanup-expired-documents.ts on an external schedule (no
+//      scheduler is configured by this codebase — see that script's own
+//      comment and the README's Document Storage section), permanently
+//      removes documents that have been PENDING_DELETION for at least 45
+//      days AND still pass checkDocumentDeletionProtection when re-checked
+//      at that moment — not merely at the time deletion was initiated.
+//      Only then: physical file deleted first (ENOENT tolerated, any
+//      other storage error aborts that document without touching its
+//      row), then the row itself.
+// restoreDocument reverses step 1 at any point before step 2 runs: status
+// back to UPLOADED, the two deletion-tracking fields cleared, storage
+// never touched — always safe to call even if nothing is pending.
+//
+// checkDocumentDeletionProtection (src/lib/documents/mutations.ts) is the
+// single, centralized gate both phases call, immediately before any
+// state-changing action. Today it has exactly one rule (the
+// contractInformation relation below). This is deliberately the place a
+// future document-carrying feature's own retention rule would be added
+// (e.g. a not-yet-built tax/expense record's receipts needing to survive
+// under different rules than an ordinary project document, or a future
+// "is this a protected brand asset" flag, if one is ever added) — one
+// more existence/flag check in that same function, nothing else to
+// restructure. No such rule exists yet because no such feature exists yet.
 //
 // The onDelete: Cascade relations below are a separate, currently-unused
 // path: if a User/Transaction/Client/Contact row were ever deleted — no
 // application code does this today, only direct database administration —
 // Postgres cascades the Document rows away at the DB level, with no
-// opportunity for deleteDocument's file-cleanup logic to run. That leaves
-// an orphaned file with no DB trace. This is a known, accepted limitation,
-// not silently unaddressed: scripts/find-orphaned-documents.ts is a
-// manually-invoked reconciliation tool for exactly this case — it is never
-// run automatically.
+// opportunity for cleanupExpiredDocuments' file-cleanup logic to run.
+// That leaves an orphaned file with no DB trace. This is a known, accepted
+// limitation, not silently unaddressed: scripts/find-orphaned-documents.ts
+// is a manually-invoked, local-filesystem-only reconciliation tool for
+// exactly this case (see README's Document Storage section for why it
+// doesn't yet cover R2-stored files) — it is never run automatically, and
+// this change doesn't extend it to R2.
 //
 // Storage reuse for future document-carrying features: nothing about
 // storage is specific to contacts/clients/transactions — `storagePath` is
@@ -563,6 +599,13 @@ model Document {
   uploadedByUser   User     @relation(fields: [uploadedByUserId], references: [id], onDelete: Cascade)
   uploadedAt       DateTime @default(now())
 
+  // Soft-delete tracking (see the model-level comment above). Both null
+  // whenever status is not PENDING_DELETION — restoreDocument clears them
+  // back to null rather than leaving a stale prior value around.
+  deletionInitiatedAt       DateTime?
+  deletionInitiatedByUserId String?
+  deletionInitiatedByUser   User?     @relation("DocumentDeletionInitiator", fields: [deletionInitiatedByUserId], references: [id], onDelete: SetNull)
+
   contactId String?
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
@@ -593,6 +636,9 @@ model Document {
   @@index([clientId])
   @@index([contactId])
   @@index([uploadedByUserId])
+  // Drives cleanupExpiredDocuments' eligibility query (status =
+  // PENDING_DELETION AND deletionInitiatedAt <= cutoff).
+  @@index([status, deletionInitiatedAt])
   @@map("documents")
 }
 

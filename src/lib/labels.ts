@@ -107,6 +107,7 @@ export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
   UPLOADED: "Uploaded",
   REVIEWED: "Reviewed",
   ARCHIVED: "Archived",
+  PENDING_DELETION: "Pending deletion",
 };
 
 export const CONTRACT_PERIOD_DAY_TYPE_LABELS: Record<ContractPeriodDayType, string> = {
