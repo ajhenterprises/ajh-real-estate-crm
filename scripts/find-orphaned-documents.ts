@@ -7,6 +7,18 @@
  * administration — no application code path does this today) leaves its
  * physical file behind with no trace to clean it up automatically.
  *
+ * LOCAL STORAGE ONLY: this script walks DOCUMENT_STORAGE_PATH on local
+ * disk directly (see listFilesRecursive below) — it does not go through
+ * the StorageAdapter interface and does not know how to list an S3-
+ * compatible bucket. When DOCUMENT_STORAGE_DRIVER=s3 (see
+ * src/lib/storage/index.ts), this script simply has nothing local to scan
+ * and reports zero files/orphans; it is not a general reconciliation tool
+ * for S3-backed deployments. Reconciling an S3 bucket would need its own,
+ * separate tool (listing objects via the provider's API) — not built here,
+ * since no production storage backend is configured yet. The pure
+ * detection logic (findOrphanedPaths) itself is backend-agnostic — it just
+ * diffs two lists of keys — so that part would carry over unchanged.
+ *
  * SAFE BY DEFAULT: with no flags, this only reports what it finds. Nothing
  * is removed unless you pass --delete explicitly. Never run automatically —
  * not from application code, not from a request, not from a migration, not

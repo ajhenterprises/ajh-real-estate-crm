@@ -18,7 +18,7 @@ deterministic application code, database logic, and user confirmation.
 | Database | PostgreSQL via Prisma ORM 7 | Relational fit for the Contact→Client→Transaction→Deadline graph; type-safe queries and migrations |
 | Auth | Auth.js (next-auth) v5, Credentials provider, JWT sessions | Self-hosted, no third-party auth vendor cost; multi-user-ready |
 | Styling | Tailwind CSS v4 with CSS custom-property design tokens | Fast, no runtime CSS-in-JS cost, easy to keep the palette consistent |
-| Document storage | Local-filesystem adapter behind a `StorageAdapter` interface | Zero extra infra for now; swap in an S3-compatible adapter later without touching feature code |
+| Document storage | `StorageAdapter` interface: local filesystem (dev/test) or any S3-compatible bucket (production), selected by `DOCUMENT_STORAGE_DRIVER` | Zero extra infra for local dev; production storage is a config change, not a code change — see Document Storage below |
 | Testing | Vitest | Fast, no separate config for TS/ESM |
 | Deployment | Any Node host (Vercel, a VPS, etc.) | No vendor lock-in beyond a Postgres instance |
 
@@ -113,6 +113,66 @@ order:
 Future phases are decided and scoped one at a time rather than fixed in
 advance here.
 
+## Document Storage
+
+Documents are only ever read/written through the `StorageAdapter` interface
+(`src/lib/storage/index.ts`) — application code never touches a filesystem
+path or an S3 SDK call directly. Which physical backend that resolves to is
+controlled by `DOCUMENT_STORAGE_DRIVER`:
+
+- **`local` (the default)** — `LocalFilesystemStorageAdapter` writes to
+  `DOCUMENT_STORAGE_PATH` on local disk. **Development and the test suite
+  only.**
+- **`s3`** — `S3StorageAdapter` (`src/lib/storage/s3.ts`) writes to any
+  S3-compatible bucket — Cloudflare R2, AWS S3, Backblaze B2, MinIO, etc. —
+  via the AWS SDK v3. Nothing in this adapter is vendor-specific; switching
+  providers is an environment-variable change, never a code change. **This
+  is the driver production must use.**
+
+### Never rely on the Vercel filesystem for production documents
+
+Vercel serverless functions have an ephemeral, effectively read-only
+filesystem outside `/tmp`, and `/tmp` itself does not persist across
+function invocations or deployments. If `DOCUMENT_STORAGE_DRIVER` is left
+unset (or set to `local`) in a production Vercel environment, every
+uploaded document will be silently lost the moment the serving function
+recycles — no error, no warning, the file just quietly stops existing on
+the next request. `DOCUMENT_STORAGE_DRIVER=s3` and its `S3_*` variables
+must be configured before production traffic ever reaches document upload.
+
+### Environment variables
+
+| Variable | Applies to | Required | Notes |
+| --- | --- | --- | --- |
+| `DOCUMENT_STORAGE_DRIVER` | both | No — defaults to `local` | `"local"` or `"s3"` |
+| `DOCUMENT_STORAGE_PATH` | `local` | No — defaults to `.data/documents` | **Development/test only** |
+| `S3_BUCKET` | `s3` | Yes | |
+| `S3_ACCESS_KEY_ID` | `s3` | Yes | |
+| `S3_SECRET_ACCESS_KEY` | `s3` | Yes | |
+| `S3_REGION` | `s3` | No — defaults to `"auto"` | Use a real AWS region for AWS S3 |
+| `S3_ENDPOINT` | `s3` | Depends on provider | Required for R2/MinIO/most non-AWS providers; omit entirely for real AWS S3 |
+| `S3_FORCE_PATH_STYLE` | `s3` | No — defaults to `false` | Some providers (e.g. MinIO) need `"true"` |
+
+No credentials, bucket names, or endpoints are hard-coded anywhere in the
+codebase — every value above comes only from the environment.
+
+### Staying compatible with document deletion and orphan detection
+
+- `deleteDocument` (`src/lib/documents/mutations.ts`) depends only on the
+  `StorageAdapter` interface's error contract — `get()` throws an error
+  with `.code === "ENOENT"` for a missing key, and `delete()` of an
+  already-missing key does not throw. Both adapters honor this, so the
+  file-first/DB-row-second deletion ordering and its failure semantics
+  (see Backup & Recovery below) are identical regardless of which driver
+  is active.
+- `scripts/find-orphaned-documents.ts` is local-filesystem-specific — it
+  walks `DOCUMENT_STORAGE_PATH` directly rather than going through
+  `StorageAdapter`, so under the `s3` driver it has nothing local to scan
+  and simply reports zero files. It is not a reconciliation tool for an S3
+  bucket; that would need a separate tool built against the provider's
+  listing API, which isn't needed until production actually adopts the
+  `s3` driver.
+
 ## Getting started
 
 ```bash
@@ -164,13 +224,21 @@ host"), so backup **scheduling**, retention, off-site copies, and encryption
 at rest are the deploying environment's own responsibility, using whatever
 mechanism it already has for scheduled jobs and secure storage.
 
-**Document storage.** The `DOCUMENT_STORAGE_PATH` directory (uploaded
-files) is not covered by `db:backup` — it needs its own, separate backup
-using the deployment environment's standard file-backup mechanism (e.g. a
-volume snapshot, rsync to off-site storage). A full recovery restores both:
-the database dump and the document-storage directory from around the same
-point in time, then run `npx prisma migrate status` to confirm the restored
-schema matches the deployed code before serving traffic.
+**Document storage.** Uploaded files are never covered by `db:backup` —
+they need their own, separate backup, and what that looks like depends on
+the driver (see Document Storage above). Under `local`, that means the
+`DOCUMENT_STORAGE_PATH` directory needs the deployment environment's
+standard file-backup mechanism (e.g. a volume snapshot, rsync to off-site
+storage) — though `local` should only ever be development/test in the
+first place. Under `s3`, durability is largely the object-storage
+provider's job (most S3-compatible providers replicate objects and offer
+their own versioning/lifecycle features) — check what your chosen provider
+guarantees and enable versioning if you want protection against an
+accidental overwrite or delete, rather than assuming it's on by default. A
+full recovery restores both the database dump and the document-storage
+state from around the same point in time, then run
+`npx prisma migrate status` to confirm the restored schema matches the
+deployed code before serving traffic.
 
 **Orphaned files.** Document deletion (`deleteDocument`,
 `src/lib/documents/mutations.ts`) always removes the physical file before
@@ -191,6 +259,6 @@ read what it reports, then decide.
 - `src/lib/auth/*` — Auth.js config (edge/node split), session helper, server actions
 - `src/proxy.ts` — route-level auth boundary
 - `src/lib/repos/*` — owner-scoped read queries
-- `src/lib/storage/*` — document storage abstraction
+- `src/lib/storage/*` — document storage abstraction (`local.ts` for dev/test, `s3.ts` for production; see Document Storage above)
 - `src/app/(app)/*` — authenticated app shell and pages
 - `src/app/login` — public sign-in page
