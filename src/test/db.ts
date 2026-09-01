@@ -84,6 +84,8 @@ const APP_TABLES = [
   "contract_information",
   "integrations",
   "external_sync_links",
+  "integration_events",
+  "webhook_events",
   "expense_categories",
   "expenses",
   "mileage_records",

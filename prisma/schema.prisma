@@ -35,6 +35,7 @@ model User {
   documents                    Document[]
   documentsDeletionInitiated   Document[]            @relation("DocumentDeletionInitiator")
   integrations                 Integration[]
+  externalSyncLinks            ExternalSyncLink[]
   contractInformationOwned     ContractInformation[] @relation("ContractInformationOwner")
   contractInformationConfirmed ContractInformation[] @relation("ContractInformationConfirmedBy")
   expenses                     Expense[]
@@ -103,13 +104,12 @@ model Contact {
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
-  client            Client?
-  tasks             Task[]
-  documents         Document[]
-  externalSyncLinks ExternalSyncLink[]
-  activities        ContactActivity[]
-  expenses          Expense[]
-  mileageRecords    MileageRecord[]
+  client         Client?
+  tasks          Task[]
+  documents      Document[]
+  activities     ContactActivity[]
+  expenses       Expense[]
+  mileageRecords MileageRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -771,17 +771,55 @@ model ContractInformation {
 }
 
 // ---------------------------------------------------------------------------
-// Integration layer foundation — no provider-specific logic on core models.
-// Two distinct concepts:
-//   Integration        — a connection to an external system (one per
-//                         provider per owner): is it connected, and how did
-//                         its last sync go.
-//   ExternalSyncLink    — per-record traceability: which external record a
-//                         local Contact was matched to, so future sync jobs
-//                         can match instead of duplicating records.
-// Nothing here implements an actual sync — no BoldTrail/FUB/Bullseye/
-// Facebook/website client code exists yet. This phase only makes sure a
-// future integration is additive, not a redesign.
+// Integration foundation — no provider-specific logic on core CRM models.
+//
+// CRM Contact/Transaction/Task/Document
+//     ↓
+// Integration (connection) + ExternalSyncLink (per-record mapping)
+//     ↓
+// (future) provider adapter — src/lib/integrations/provider-adapter.ts
+//     ↓
+// (future) Follow Up Boss / Bullseye / BoldTrail
+//
+// Nothing here calls, authenticates against, or knows the field names of
+// any real provider. No BoldTrail/Follow Up Boss/Bullseye client code
+// exists yet — see src/lib/integrations/provider-adapter.ts for the
+// interface a future provider implements, and this section's own model
+// comments for how each piece is meant to be used. If an Integration is
+// disconnected (status flips to DISCONNECTED — the row is never deleted by
+// a normal disconnect), every CRM record it ever touched (Contact,
+// Transaction, Task, Document, Expense, ...) is completely unaffected;
+// only ExternalSyncLink rows (the mapping) and this connection's own state
+// are integration-specific.
+//
+// Four concepts:
+//   Integration       — one connection per (owner, provider): is it
+//                        connected, what it's configured to do, and how
+//                        did its last sync go. Credentials, if any, live
+//                        here encrypted (see encryptedCredentials below;
+//                        never returned to a client component — see
+//                        src/lib/integrations/credentials.ts).
+//   ExternalSyncLink   — per-record traceability: which external record a
+//                        local Contact/Transaction/Task was matched to,
+//                        generalized across record types (not hard-coded
+//                        to Contact) so future sync jobs can match instead
+//                        of duplicating records, for any of the internal
+//                        record types this foundation supports.
+//   IntegrationEvent   — a small, append-only audit trail for connection-
+//                        level lifecycle events (connected, disconnected,
+//                        sync started/completed/failed). Mirrors
+//                        ContactActivity's existing shape/spirit
+//                        (type + message + metadata + createdAt) rather
+//                        than inventing a new pattern.
+//   WebhookEvent       — tracks an inbound webhook delivery and its
+//                        processing state. The (provider, externalEventId)
+//                        uniqueness is the idempotency mechanism: the same
+//                        delivery, retried by the provider, can never be
+//                        recorded (and therefore never processed) twice.
+//                        No live HTTP route accepts real deliveries yet —
+//                        see src/lib/integrations/webhooks.ts's comment
+//                        for why that's deliberately out of scope until a
+//                        real provider's payload shape is known.
 // ---------------------------------------------------------------------------
 
 enum ExternalProvider {
@@ -793,8 +831,13 @@ enum ExternalProvider {
   OTHER
 }
 
+// Per-record sync state on ExternalSyncLink. "Disconnected" is
+// deliberately not a value here — that's the parent Integration's own
+// state (IntegrationStatus.DISCONNECTED); a link's last known sync
+// status doesn't change just because the connection is currently down.
 enum SyncStatus {
   PENDING
+  SYNCING
   SYNCED
   ERROR
 }
@@ -805,21 +848,61 @@ enum IntegrationStatus {
   ERROR
 }
 
+// Which CRM entity an ExternalSyncLink maps to. No FK/relation to the
+// underlying table is declared for internalRecordId — Prisma has no
+// native polymorphic-association support, and a real FK per record type
+// would mean three near-identical nullable columns (the exact "duplicate
+// concepts" this foundation is meant to avoid). The tradeoff — no DB-level
+// referential integrity on this one mapping table — is accepted
+// deliberately; ownerId below still gets real authorization enforcement.
+enum InternalRecordType {
+  CONTACT
+  TRANSACTION
+  TASK
+}
+
+enum IntegrationEventType {
+  CONNECTED
+  DISCONNECTED
+  SYNC_STARTED
+  SYNC_COMPLETED
+  SYNC_FAILED
+}
+
+enum WebhookProcessingStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
 model Integration {
   id            String            @id @default(cuid())
   provider      ExternalProvider
   status        IntegrationStatus @default(DISCONNECTED)
-  // Non-secret configuration only (e.g. sync frequency, field mappings).
-  // Where/how credentials get stored is a decision for whichever phase
-  // implements the first real connection — deliberately not modeled yet.
+  // User-facing label (e.g. "Follow Up Boss — Team A"). Null falls back to
+  // the provider's own display label (EXTERNAL_PROVIDER_LABELS) in the UI.
+  displayName   String?
+  // Non-secret configuration only (sync frequency, field mappings — see
+  // src/lib/integrations/field-mapping.ts's FieldMapping type for the
+  // shape a future mapping config would take). Never credentials.
   settings      Json?
   lastSyncedAt  DateTime?
   lastSyncError String?
 
+  // Encrypted (AES-256-GCM via src/lib/integrations/credentials.ts), never
+  // plain text, never selected by any query that returns Integration data
+  // to a Server/Client Component — see that file's own comment for the
+  // full contract. Null until a real connection stores something here;
+  // this phase never writes a real credential to it.
+  encryptedCredentials String?
+
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
-  syncLinks ExternalSyncLink[]
+  syncLinks     ExternalSyncLink[]
+  events        IntegrationEvent[]
+  webhookEvents WebhookEvent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -829,29 +912,101 @@ model Integration {
 }
 
 model ExternalSyncLink {
-  id           String           @id @default(cuid())
-  provider     ExternalProvider
-  externalId   String
+  id         String           @id @default(cuid())
+  provider   ExternalProvider
+  externalId String
+
+  internalRecordType InternalRecordType
+  internalRecordId   String
+
   lastSyncedAt DateTime?
-  syncStatus   SyncStatus       @default(PENDING)
+  syncStatus   SyncStatus @default(PENDING)
   syncError    String?
 
-  contactId String
-  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
 
-  // Which connection produced this link. Nullable because a link can be
-  // recorded (e.g. from a one-off import) before a full Integration
-  // connection exists for that provider.
-  integrationId String?
-  integration   Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  // Denormalized rather than derived by joining through whichever table
+  // internalRecordType points at (Contact/Transaction/Task each have
+  // their own ownerId) — same convention as Transaction.ownerId being
+  // denormalized from Client.ownerId. This is what makes "never expose
+  // one user's external IDs to another" a single, uniform filter instead
+  // of a per-record-type conditional join.
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([provider, externalId])
-  @@index([contactId])
-  @@index([integrationId])
+  // The exact duplicate this foundation must prevent: the same
+  // integration mapping the same internal record to the same external
+  // record more than once.
+  @@unique([integrationId, internalRecordType, internalRecordId, externalId])
+  @@index([internalRecordType, internalRecordId])
+  @@index([ownerId])
   @@map("external_sync_links")
+}
+
+// Connection-level audit trail — NOT for webhook events (WebhookEvent's
+// own processingStatus/receivedAt/processedAt already cover "received/
+// processed/failed" without a second, duplicate record of the same fact).
+model IntegrationEvent {
+  id       String               @id @default(cuid())
+  type     IntegrationEventType
+  // Human-readable summary, never a secret (e.g. "Connected to Follow Up
+  // Boss" / "Sync failed: rate limited"). metadata is structured detail
+  // for the same reason — never credentials, never raw provider payloads
+  // (WebhookEvent.payload is the place for that).
+  message  String?
+  metadata Json?
+
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([integrationId, createdAt])
+  @@map("integration_events")
+}
+
+model WebhookEvent {
+  id       String           @id @default(cuid())
+  provider ExternalProvider
+
+  // Nullable: a delivery can arrive before it's matched to a specific
+  // owner's connection (or fail to match at all) — see
+  // src/lib/integrations/webhooks.ts. Any future feature that lists or
+  // displays WebhookEvent rows MUST filter through integration.ownerId;
+  // this table has no direct ownerId of its own because an unmatched
+  // event legitimately has no owner yet.
+  integrationId String?
+  integration   Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+
+  // The provider's own event id for this delivery — the idempotency key
+  // (see the unique constraint below). eventType is free text (e.g.
+  // "contact.updated") since providers don't share a vocabulary; no
+  // enum would stay meaningful across three different providers.
+  externalEventId String
+  eventType       String
+  // Raw (or lightly parsed) event body. Never a place credentials belong
+  // — a provider's webhook payload describing a CRM record isn't a
+  // secret the way an OAuth token is, but this is still never logged in
+  // full (see webhooks.ts) and never returned to a client component.
+  payload         Json?
+
+  processingStatus WebhookProcessingStatus @default(RECEIVED)
+  receivedAt       DateTime                @default(now())
+  processedAt      DateTime?
+  errorMessage     String?
+  retryCount       Int                     @default(0)
+
+  // The idempotency guarantee this whole model exists for: the same
+  // provider delivering the same external event id twice can only ever
+  // occupy one row here.
+  @@unique([provider, externalEventId])
+  @@index([integrationId])
+  @@index([processingStatus])
+  @@map("webhook_events")
 }
 
 // ---------------------------------------------------------------------------

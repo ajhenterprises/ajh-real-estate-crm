@@ -6,6 +6,7 @@ export const primaryNavItems = [
   { href: "/tasks", label: "Tasks" },
   { href: "/documents", label: "Documents" },
   { href: "/tax-expenses", label: "Tax & Expenses" },
+  { href: "/integrations", label: "Integrations" },
 ] as const;
 
 // Named on the roadmap but not yet built — shown de-emphasized rather than
@@ -13,6 +14,5 @@ export const primaryNavItems = [
 export const upcomingNavItems = [
   { label: "Calendar" },
   { label: "Reports" },
-  { label: "Integrations" },
   { label: "Settings" },
 ] as const;
