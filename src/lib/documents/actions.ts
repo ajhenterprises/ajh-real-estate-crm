@@ -6,7 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
 import { getStorageAdapter } from "@/lib/storage";
-import { deleteDocument, restoreDocument } from "@/lib/documents/mutations";
+import { deleteDocument, documentOwnershipFilter, restoreDocument } from "@/lib/documents/mutations";
 import {
   ALLOWED_DOCUMENT_MIME_TYPES,
   MAX_DOCUMENT_SIZE_BYTES,
@@ -100,14 +100,7 @@ export async function archiveDocumentAction(formData: FormData) {
   if (typeof documentId !== "string") return;
 
   const document = await prisma.document.findFirst({
-    where: {
-      id: documentId,
-      OR: [
-        { transaction: { ownerId: session.user.id } },
-        { client: { ownerId: session.user.id } },
-        { contact: { ownerId: session.user.id } },
-      ],
-    },
+    where: { id: documentId, ...documentOwnershipFilter(session.user.id) },
   });
   if (!document) return;
 

@@ -37,6 +37,9 @@ model User {
   integrations                 Integration[]
   contractInformationOwned     ContractInformation[] @relation("ContractInformationOwner")
   contractInformationConfirmed ContractInformation[] @relation("ContractInformationConfirmedBy")
+  expenses                     Expense[]
+  mileageRecords               MileageRecord[]
+  expenseCategories            ExpenseCategory[]
 
   @@map("users")
 }
@@ -105,6 +108,8 @@ model Contact {
   documents         Document[]
   externalSyncLinks ExternalSyncLink[]
   activities        ContactActivity[]
+  expenses          Expense[]
+  mileageRecords    MileageRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -192,9 +197,11 @@ model Client {
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
-  transactions Transaction[]
-  tasks        Task[]
-  documents    Document[]
+  transactions   Transaction[]
+  tasks          Task[]
+  documents      Document[]
+  expenses       Expense[]
+  mileageRecords MileageRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -254,6 +261,8 @@ model Transaction {
   tasks               Task[]
   documents           Document[]
   contractInformation ContractInformation[]
+  expenses            Expense[]
+  mileageRecords      MileageRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -506,6 +515,9 @@ enum DocumentType {
   APPRAISAL
   TITLE_DOCUMENT
   CLOSING_STATEMENT
+  // Tax & Expense tracking: a receipt/supporting document attached to an
+  // Expense via Document.expenseId.
+  RECEIPT
   OTHER
 }
 
@@ -615,18 +627,34 @@ model Document {
   transactionId String?
   transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 
+  // Tax & Expense tracking: a receipt/supporting document attached to an
+  // Expense. Deliberately NOT onDelete: Cascade like contact/client/
+  // transaction above — an Expense is a plain record with no storage
+  // lifecycle of its own, and deleting one must never delete its receipt's
+  // physical file (see checkDocumentDeletionProtection below and
+  // src/lib/tax-expenses/mutations.ts's deleteExpense). SetNull means
+  // deleting an Expense row un-links its receipts — they survive as
+  // ordinary, no-longer-protected-by-this-rule documents; the document
+  // lifecycle (deleteDocument/cleanupExpiredDocuments) remains the only
+  // path that ever touches the R2 object itself.
+  expenseId String?
+  expense   Expense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+
   // A CONTRACT-type document may have exactly one structured
   // ContractInformation record built from it. Restrict (not Cascade orphan
   // deletion elsewhere handles): a document with contract information
   // behind it can't be deleted out from under it. deleteDocument checks
   // for this relation itself, before touching storage, so the file is
   // never destroyed only for this constraint to then block the row
-  // delete — this is the model for how a future retention rule (e.g. a
-  // not-yet-built tax/expense record needing to protect its receipts from
-  // deletion under a different policy than ordinary project documents)
-  // should be wired in: one more existence check in deleteDocument,
-  // before storage.delete(), same pattern, no schema change required here
-  // beyond whatever the future model itself needs.
+  // delete. This was the model for wiring in the Tax & Expense receipt
+  // protection above: checkDocumentDeletionProtection
+  // (src/lib/documents/mutations.ts) now checks expenseId directly (no
+  // extra query needed — it's a plain scalar on this same row) alongside
+  // the ContractInformation existence check, both before storage.delete()
+  // in deleteDocument and re-checked fresh in cleanupExpiredDocuments
+  // immediately before the physical delete. No tax-specific retention
+  // *period* is implemented here — only the protection relationship
+  // itself, per this phase's explicit scope.
   contractInformation ContractInformation?
 
   createdAt DateTime @default(now())
@@ -635,6 +663,7 @@ model Document {
   @@index([transactionId])
   @@index([clientId])
   @@index([contactId])
+  @@index([expenseId])
   @@index([uploadedByUserId])
   // Drives cleanupExpiredDocuments' eligibility query (status =
   // PENDING_DELETION AND deletionInitiatedAt <= cutoff).
@@ -823,4 +852,160 @@ model ExternalSyncLink {
   @@index([contactId])
   @@index([integrationId])
   @@map("external_sync_links")
+}
+
+// ---------------------------------------------------------------------------
+// Tax & Expense tracking — record-keeping, not tax advice
+// ---------------------------------------------------------------------------
+//
+// This section is a record-keeping/reporting tool only. Nothing here makes
+// a legal or tax determination: deductibleStatus is a label the user (or
+// their tax professional) sets, defaulting to NEEDS_REVIEW on every new
+// expense — the system never infers or defaults it to DEDUCTIBLE, and
+// businessUsePercent is never defaulted to 100 by the system either (see
+// src/lib/tax-expenses/validation.ts). No tax rate, deduction amount, or
+// mileage reimbursement rate is stored or calculated anywhere in this
+// schema; MileageRecord tracks actual miles only.
+
+enum PaymentMethod {
+  BUSINESS_BANK_ACCOUNT
+  BUSINESS_CREDIT_CARD
+  PERSONAL_CARD
+  CASH
+  CHECK
+  OTHER
+}
+
+enum DeductibilityStatus {
+  NEEDS_REVIEW
+  DEDUCTIBLE
+  NOT_DEDUCTIBLE
+}
+
+// Reference data, not an enum like PaymentMethod/DeductibilityStatus above
+// — the whole point is letting a user add their own category without a
+// future migration (a fixed set of defaults is seeded by this table's own
+// migration; see that migration's INSERT statements). ownerId null = a
+// shared default every user sees; ownerId set = a custom category created
+// by, and visible only to, that user.
+model ExpenseCategory {
+  id              String  @id @default(cuid())
+  name            String
+  isSystemDefault Boolean @default(false)
+
+  ownerId String?
+  owner   User?   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  expenses Expense[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([ownerId, name])
+  @@index([ownerId])
+  @@map("expense_categories")
+}
+
+model Expense {
+  id String @id @default(cuid())
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  expenseDate DateTime
+  // Derived from expenseDate's UTC calendar year at write time (see
+  // src/lib/tax-expenses/mutations.ts) — stored, not computed at query
+  // time, so tax-year filtering/reporting stays a plain indexed equality
+  // check. Same UTC-date-only convention as the rest of this schema (see
+  // src/lib/format.ts).
+  taxYear     Int
+
+  // Money: Decimal, never Float — same convention as
+  // Transaction.purchasePrice/ContractInformation's financial fields.
+  amount Decimal @db.Decimal(12, 2)
+
+  vendor String
+
+  categoryId String
+  category   ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  businessPurpose  String?
+  paymentMethod    PaymentMethod       @default(OTHER)
+  deductibleStatus DeductibilityStatus @default(NEEDS_REVIEW)
+
+  // 0-100, validated in src/lib/tax-expenses/validation.ts. Null means "not
+  // a mixed-use expense" — never defaulted to 100 by the system; only ever
+  // set by explicit user entry (e.g. shared phone/internet/vehicle/home
+  // office costs).
+  businessUsePercent Int?
+
+  notes String?
+
+  // Optional associations — independently nullable, same pattern as
+  // Document's contactId/clientId/transactionId. Neither an expense nor a
+  // mileage record is ever forced to belong to a transaction: "CRM
+  // subscription — $79" is exactly as valid as "Photography — 123 Main
+  // Street — $175".
+  transactionId String?
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  // One or more receipts/supporting documents — see Document.expenseId's
+  // own comment for the deletion-protection design this enables.
+  documents Document[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId, taxYear])
+  @@index([ownerId, categoryId])
+  @@index([transactionId])
+  @@index([clientId])
+  @@index([contactId])
+  @@map("expenses")
+}
+
+model MileageRecord {
+  id String @id @default(cuid())
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  date    DateTime
+  // Same derivation/storage rationale as Expense.taxYear above.
+  taxYear Int
+
+  startLocation   String
+  destination     String
+  businessPurpose String
+
+  // Decimal, not Float, for the same reason financial amounts are —
+  // avoids floating-point drift on a value that gets summed for reporting.
+  // No mileage rate is stored anywhere here; this table tracks actual
+  // miles only (see this section's top comment).
+  miles Decimal @db.Decimal(8, 1)
+
+  transactionId String?
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId, taxYear])
+  @@index([transactionId])
+  @@index([clientId])
+  @@index([contactId])
+  @@map("mileage_records")
 }

@@ -15,6 +15,11 @@ import { getStorageAdapter, type StorageAdapter } from "@/lib/storage";
  *      same ENOENT-tolerant ordering deleteDocument always used.
  *
  * restoreDocument reverses step 1 at any point before step 2 runs.
+ * src/lib/tax-expenses/mutations.ts's removeExpenseReceipt is a third,
+ * expense-aware caller of the same underlying soft-delete write (see
+ * markDocumentPendingDeletion below) — it deliberately unlinks a document
+ * from its Expense first so checkDocumentDeletionProtection no longer
+ * blocks it, the one legitimate way to remove an expense's receipt.
  *
  * Same shape as src/lib/contacts/mutations.ts throughout: no
  * `import "server-only"`, optional trailing overrides (a Prisma client,
@@ -28,6 +33,25 @@ export const DOCUMENT_DELETION_RETENTION_DAYS = 45;
 
 function isFileNotFoundError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT";
+}
+
+/**
+ * A document is owned transitively through whichever of transaction /
+ * client / contact / expense it's attached to. Shared by every
+ * ownership-scoped Document query in this codebase (this file, actions.ts,
+ * repos/documents.ts) so adding a new attachment point — as `expense`
+ * was — is one change, not four independently-drifting copies of the same
+ * OR clause.
+ */
+export function documentOwnershipFilter(userId: string): Prisma.DocumentWhereInput {
+  return {
+    OR: [
+      { transaction: { ownerId: userId } },
+      { client: { ownerId: userId } },
+      { contact: { ownerId: userId } },
+      { expense: { ownerId: userId } },
+    ],
+  };
 }
 
 // A small, append-only audit trail reusing Document.metadata (already a
@@ -58,6 +82,14 @@ function appendLifecycleEvent(existingMetadata: Prisma.JsonValue | null, event: 
  * and cleanupExpiredDocuments (re-checked fresh immediately before the
  * physical delete — protection state can change during the 45-day
  * window, so the value cached from initiation is never trusted here).
+ *
+ * Takes the document's own id/expenseId rather than re-querying by id:
+ * expenseId is a plain scalar already present on any already-fetched
+ * Document row, so checking it costs nothing extra, unlike
+ * ContractInformation (a separate table, genuinely needing its own
+ * lookup). This is also the extension point for a future document-
+ * carrying feature's own retention rule — one more field/existence check
+ * here, in the same shape.
  */
 export interface DocumentProtectionResult {
   protected: boolean;
@@ -66,10 +98,16 @@ export interface DocumentProtectionResult {
 
 export async function checkDocumentDeletionProtection(
   db: Prisma.TransactionClient,
-  documentId: string,
+  document: { id: string; expenseId: string | null },
 ): Promise<DocumentProtectionResult> {
+  if (document.expenseId) {
+    return {
+      protected: true,
+      reason: "This document is attached to an expense record and can't be deleted.",
+    };
+  }
   const contractInformation = await db.contractInformation.findUnique({
-    where: { documentId },
+    where: { documentId: document.id },
     select: { id: true },
   });
   if (contractInformation) {
@@ -79,6 +117,28 @@ export async function checkDocumentDeletionProtection(
     };
   }
   return { protected: false };
+}
+
+/** The write shared by every path that actually soft-deletes a document (deleteDocument below, and tax-expenses/mutations.ts's removeExpenseReceipt). Callers are responsible for authorization and the protection check — this just performs the state transition. */
+export async function markDocumentPendingDeletion(
+  db: Prisma.TransactionClient,
+  document: { id: string; metadata: Prisma.JsonValue | null },
+  userId: string,
+  now: Date,
+): Promise<void> {
+  await db.document.update({
+    where: { id: document.id },
+    data: {
+      status: "PENDING_DELETION",
+      deletionInitiatedAt: now,
+      deletionInitiatedByUserId: userId,
+      metadata: appendLifecycleEvent(document.metadata, {
+        type: "deletion-initiated",
+        at: now.toISOString(),
+        byUserId: userId,
+      }),
+    },
+  });
 }
 
 export type DeleteDocumentResult =
@@ -94,35 +154,16 @@ export async function deleteDocument(
   now: Date = new Date(),
 ): Promise<DeleteDocumentResult> {
   const document = await db.document.findFirst({
-    where: {
-      id: documentId,
-      OR: [
-        { transaction: { ownerId: userId } },
-        { client: { ownerId: userId } },
-        { contact: { ownerId: userId } },
-      ],
-    },
+    where: { id: documentId, ...documentOwnershipFilter(userId) },
   });
   if (!document) return { outcome: "not-found" };
 
-  const protection = await checkDocumentDeletionProtection(db, document.id);
+  const protection = await checkDocumentDeletionProtection(db, document);
   if (protection.protected) {
     return { outcome: "protected", reason: protection.reason! };
   }
 
-  await db.document.update({
-    where: { id: document.id },
-    data: {
-      status: "PENDING_DELETION",
-      deletionInitiatedAt: now,
-      deletionInitiatedByUserId: userId,
-      metadata: appendLifecycleEvent(document.metadata, {
-        type: "deletion-initiated",
-        at: now.toISOString(),
-        byUserId: userId,
-      }),
-    },
-  });
+  await markDocumentPendingDeletion(db, document, userId, now);
 
   return { outcome: "pending-deletion", transactionId: document.transactionId };
 }
@@ -145,15 +186,7 @@ export async function restoreDocument(
   now: Date = new Date(),
 ): Promise<RestoreDocumentResult> {
   const document = await db.document.findFirst({
-    where: {
-      id: documentId,
-      status: "PENDING_DELETION",
-      OR: [
-        { transaction: { ownerId: userId } },
-        { client: { ownerId: userId } },
-        { contact: { ownerId: userId } },
-      ],
-    },
+    where: { id: documentId, status: "PENDING_DELETION", ...documentOwnershipFilter(userId) },
   });
   if (!document) return { outcome: "not-found" };
 
@@ -201,14 +234,14 @@ export async function cleanupExpiredDocuments(
 
   const candidates = await db.document.findMany({
     where: { status: "PENDING_DELETION", deletionInitiatedAt: { lte: cutoff } },
-    select: { id: true, storagePath: true },
+    select: { id: true, storagePath: true, expenseId: true },
   });
 
   const result: CleanupExpiredDocumentsResult = { deleted: [], skippedProtected: [], failed: [] };
 
   for (const candidate of candidates) {
     try {
-      const protection = await checkDocumentDeletionProtection(db, candidate.id);
+      const protection = await checkDocumentDeletionProtection(db, candidate);
       if (protection.protected) {
         result.skippedProtected.push({ id: candidate.id, reason: protection.reason! });
         continue;

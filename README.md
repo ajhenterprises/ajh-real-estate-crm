@@ -103,6 +103,12 @@ order:
   document-delete action (closing the gap where no explicit deletion path
   existed), and a documented backup/recovery strategy with an operator-run
   orphaned-file reconciliation script.
+- **Tax & Expenses** — business expense and mileage tracking for
+  record-keeping/tax-preparation purposes only: this app never makes a
+  legal/tax determination (see Tax & Expenses below). Reuses the existing
+  Document/StorageAdapter/R2 stack for receipts and the existing
+  soft-delete lifecycle's centralized protection gate, extended to
+  recognize a document attached to an expense.
 
 Future phases are decided and scoped one at a time rather than fixed in
 advance here.
@@ -264,6 +270,59 @@ extended to scan R2 by this change, and this change does not
 automatically delete anything it would find. A report-only R2-bucket
 equivalent, if ever needed, is a separate tool, deliberately not built
 here.
+
+## Tax & Expenses
+
+A record-keeping and reporting tool for business expenses and mileage —
+`/tax-expenses` and `/tax-expenses/mileage`. **This app never makes a
+legal or tax determination.** Every expense carries a `deductibleStatus`
+(`Needs Review` / `Deductible` / `Not Deductible`) that only the user (or
+their tax professional) sets — it defaults to `Needs Review` and is never
+inferred or auto-classified. `businessUsePercent` (0–100, for mixed-use
+expenses like a shared phone or vehicle) is likewise only ever set by
+explicit user entry, never defaulted to 100. No tax rate, deduction
+amount, or mileage reimbursement rate is calculated or stored anywhere —
+`MileageRecord` tracks actual miles only.
+
+**Data model.** `Expense` and `MileageRecord` (both `ownerId`-scoped, the
+same authorization pattern as every other model here) optionally
+associate with a `Transaction` and/or `Contact` — never required, so a
+general expense ("CRM subscription — $79") is exactly as valid as a
+transaction-specific one ("Photography — 123 Main Street — $175").
+`ExpenseCategory` is a database table, not an enum (unlike the small,
+fixed `PaymentMethod`/`DeductibilityStatus` vocabularies) — 20 defaults
+are seeded for every user (`ownerId` null), and any user can add their own
+custom categories (`ownerId` set) without a migration. Money is `Decimal`,
+never `Float`, matching `Transaction.purchasePrice`'s existing convention.
+`taxYear` is stored (derived from the date's UTC calendar year at write
+time — see `src/lib/format.ts`'s established UTC-date convention), not
+computed at query time, so year filtering/reporting is a plain indexed
+lookup.
+
+**Receipts reuse the existing document stack — no second storage
+system.** A receipt is an ordinary `Document` row (`documentType:
+"RECEIPT"`) with `Document.expenseId` set, uploaded through the same
+`StorageAdapter`/R2 bucket as every other document, under an
+`expenses/{expenseId}/{uuid}.ext` key. `checkDocumentDeletionProtection`
+(`src/lib/documents/mutations.ts`) — the same centralized gate that
+protects `ContractInformation` documents — now also protects any document
+with `expenseId` set, so the 45-day cleanup job can never permanently
+delete a receipt that's still attached to an expense. Deleting an
+*expense* never deletes its receipt's R2 object: `Document.expenseId` is
+`onDelete: SetNull`, so the receipt survives, un-linked, exactly as
+designed — the document lifecycle remains the only code path that ever
+physically deletes a file. "Detaching" a receipt from an expense
+(`removeExpenseReceipt`) is the one authorized way to lift that
+protection; it then defers to the ordinary soft-delete path, so a removed
+receipt still gets the same 45-day recovery window as any other document.
+
+**Export.** CSV only — no XLSX generation exists anywhere in this
+codebase, and nothing else needs it, so CSV (which every spreadsheet tool
+already opens) covers "export for tax preparation" without a new
+dependency. `/api/tax-expenses/export?type=expenses|mileage&taxYear=...`
+is owner-scoped like every other query here; exports show human-readable
+labels (vendor, category name, associated transaction/contact), never raw
+database ids.
 
 ## Getting started
 

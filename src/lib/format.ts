@@ -20,6 +20,15 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
   currency: "USD",
   maximumFractionDigits: 0,
 });
+// Whole-dollar rounding above is fine for transaction/listing prices, but
+// itemized business expenses routinely have real cents (a $4.99/month
+// subscription) — used only in the Tax & Expenses section.
+const currencyFormatterPrecise = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
 export function formatDate(date: Date): string {
   return dateFormatter.format(date);
@@ -34,6 +43,14 @@ export function formatCurrency(value: number | string | null | undefined): strin
   const numeric = typeof value === "string" ? Number(value) : value;
   if (Number.isNaN(numeric)) return null;
   return currencyFormatter.format(numeric);
+}
+
+/** Same as formatCurrency but always shows cents — see currencyFormatterPrecise above. */
+export function formatCurrencyPrecise(value: number | string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const numeric = typeof value === "string" ? Number(value) : value;
+  if (Number.isNaN(numeric)) return null;
+  return currencyFormatterPrecise.format(numeric);
 }
 
 export function contactDisplayName(contact: { firstName: string; lastName: string }): string {

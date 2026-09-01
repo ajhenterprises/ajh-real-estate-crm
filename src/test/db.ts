@@ -2,6 +2,7 @@ import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 import bcrypt from "bcryptjs";
+import { seedDefaultExpenseCategoriesForTest } from "@/lib/tax-expenses/categories";
 
 /**
  * Minimal, reusable Postgres/Prisma integration-test harness (Phase 7).
@@ -83,6 +84,9 @@ const APP_TABLES = [
   "contract_information",
   "integrations",
   "external_sync_links",
+  "expense_categories",
+  "expenses",
+  "mileage_records",
 ] as const;
 
 /**
@@ -90,11 +94,22 @@ const APP_TABLES = [
  * `beforeEach`/`afterEach` so each test starts from a known-empty state.
  * Safe by construction: only ever executes against `getTestDb()`'s
  * connection, which only exists once `hasTestDatabase` has been verified.
+ *
+ * expense_categories is reference data seeded once by its migration (see
+ * prisma/migrations/20260901180000_tax_expense_tracking), not per-test
+ * fixture data — truncating it like every other table keeps full test
+ * isolation (a test that creates a custom category never leaks it into
+ * the next test), but that means the 20 shared defaults have to be
+ * re-inserted immediately after, or every expense test would start with
+ * no categories to choose from at all. seedDefaultExpenseCategoriesForTest
+ * is only ever safe against an empty table, which is exactly what a fresh
+ * TRUNCATE guarantees here.
  */
 export async function resetTestDatabase(): Promise<void> {
   const db = getTestDb();
   const tableList = APP_TABLES.map((table) => `"${table}"`).join(", ");
   await db.$executeRawUnsafe(`TRUNCATE TABLE ${tableList} RESTART IDENTITY CASCADE;`);
+  await seedDefaultExpenseCategoriesForTest(db);
 }
 
 /** Creates a User row directly in the test database for use as a test fixture's owner. */

@@ -401,4 +401,97 @@ describe.skipIf(!hasTestDatabase)("document deletion/retention lifecycle (integr
   it.todo(
     "brand assets remain protected where applicable — no is_brand_asset flag or equivalent exists in the current schema; nothing to test against",
   );
+
+  describe("deletion protection (Expense receipts — Tax & Expense tracking)", () => {
+    async function createExpenseReceiptDocument(ownerId: string) {
+      const db = getTestDb();
+      const expense = await db.expense.create({
+        data: {
+          ownerId,
+          expenseDate: new Date("2026-01-01T00:00:00.000Z"),
+          taxYear: 2026,
+          amount: "50.00",
+          vendor: "Vendor",
+          categoryId: "expcat_other",
+          paymentMethod: "OTHER",
+          deductibleStatus: "NEEDS_REVIEW",
+        },
+      });
+      const key = `expenses/${expense.id}/receipt.pdf`;
+      const filePath = await writeFixtureFile(key, "receipt bytes");
+      const document = await db.document.create({
+        data: {
+          filename: "receipt.pdf",
+          documentType: "RECEIPT",
+          storagePath: key,
+          fileSize: 14,
+          mimeType: "application/pdf",
+          uploadedByUserId: ownerId,
+          expenseId: expense.id,
+        },
+      });
+      return { expense, document, filePath };
+    }
+
+    it("refuses to soft-delete a document attached to an expense, leaving the file and row untouched", async () => {
+      const owner = await createTestUser();
+      const { document, filePath } = await createExpenseReceiptDocument(owner.id);
+
+      const result = await deleteDocument(owner.id, document.id, getTestDb(), NOW);
+
+      expect(result.outcome).toBe("protected");
+      expect(existsSync(filePath)).toBe(true);
+      const row = await getTestDb().document.findUnique({ where: { id: document.id } });
+      expect(row?.status).toBe("UPLOADED");
+    });
+
+    it("finds a document owned only through its expense association — no transaction/client/contact link needed", async () => {
+      // This is the "CRM subscription — $79" case: a general business
+      // expense with no transaction, so its receipt's only ownership path
+      // is through the expense itself. documentOwnershipFilter must cover
+      // this or the document would be unreachable by its own owner.
+      const owner = await createTestUser();
+      const { document } = await createExpenseReceiptDocument(owner.id);
+
+      const result = await deleteDocument(owner.id, document.id, getTestDb(), NOW);
+
+      // Found (not "not-found") and correctly refused because it's
+      // protected — proves ownership resolution AND protection both work.
+      expect(result.outcome).toBe("protected");
+    });
+
+    it("never permanently deletes a document attached to an expense, even past the 45-day boundary", async () => {
+      const owner = await createTestUser();
+      const { document, filePath } = await createExpenseReceiptDocument(owner.id);
+      await markPendingDeletion(document.id, new Date(NOW.getTime() - 46 * DAY_MS), owner.id);
+
+      const result = await cleanupExpiredDocuments(getTestDb(), storage, NOW);
+
+      expect(result.deleted).toHaveLength(0);
+      expect(result.skippedProtected.map((d) => d.id)).toEqual([document.id]);
+      expect(existsSync(filePath)).toBe(true);
+      expect(await getTestDb().document.findUnique({ where: { id: document.id } })).not.toBeNull();
+    });
+
+    it("deleting the expense unlinks (does not delete) its receipt, and the receipt is then no longer protected", async () => {
+      const owner = await createTestUser();
+      const { expense, document, filePath } = await createExpenseReceiptDocument(owner.id);
+
+      await getTestDb().expense.delete({ where: { id: expense.id } });
+
+      const row = await getTestDb().document.findUnique({ where: { id: document.id } });
+      expect(row).not.toBeNull();
+      expect(row?.expenseId).toBeNull();
+      expect(existsSync(filePath)).toBe(true);
+
+      // Now an ordinary, unprotected document — deleteDocument's ownership
+      // check no longer finds it via the (now-gone) expense link, matching
+      // the documented, accepted limitation for any document whose only
+      // ownership path disappears; it remains recoverable via direct DB
+      // administration, same as the cascade-orphan case documented in
+      // scripts/find-orphaned-documents.ts.
+      const result = await deleteDocument(owner.id, document.id, getTestDb(), NOW);
+      expect(result).toEqual({ outcome: "not-found" });
+    });
+  });
 });

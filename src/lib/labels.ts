@@ -4,8 +4,10 @@ import type {
   ContactActivityType,
   ContactType,
   ContractPeriodDayType,
+  DeductibilityStatus,
   DocumentStatus,
   DocumentType,
+  PaymentMethod,
   TaskPriority,
   TaskStatus,
   TransactionEventType,
@@ -100,6 +102,7 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   APPRAISAL: "Appraisal",
   TITLE_DOCUMENT: "Title",
   CLOSING_STATEMENT: "Closing",
+  RECEIPT: "Receipt",
   OTHER: "Other",
 };
 
@@ -113,4 +116,22 @@ export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
 export const CONTRACT_PERIOD_DAY_TYPE_LABELS: Record<ContractPeriodDayType, string> = {
   CALENDAR: "Calendar days",
   BUSINESS: "Business days (Mon–Fri, holidays not excluded)",
+};
+
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  BUSINESS_BANK_ACCOUNT: "Business Bank Account",
+  BUSINESS_CREDIT_CARD: "Business Credit Card",
+  PERSONAL_CARD: "Personal Card",
+  CASH: "Cash",
+  CHECK: "Check",
+  OTHER: "Other",
+};
+
+// Record-keeping labels only — see DeductibilityStatus's schema comment.
+// "Deductible" here reflects the status the user (or their tax
+// professional) has entered, never a determination this app makes.
+export const DEDUCTIBILITY_STATUS_LABELS: Record<DeductibilityStatus, string> = {
+  NEEDS_REVIEW: "Needs Review",
+  DEDUCTIBLE: "Deductible",
+  NOT_DEDUCTIBLE: "Not Deductible",
 };
