@@ -141,4 +141,87 @@ describe.skipIf(!hasTestDatabase)("deleteDocument (integration)", () => {
     expect(first.outcome).toBe("deleted");
     expect(second).toEqual({ outcome: "not-found" });
   });
+
+  describe("deletion protection (ContractInformation)", () => {
+    async function createContractDocumentWithInformation(ownerId: string) {
+      const db = getTestDb();
+      const contact = await createTestContact(ownerId);
+      const client = await db.client.create({ data: { contactId: contact.id, ownerId, type: "BUYER" } });
+      const transaction = await db.transaction.create({ data: { clientId: client.id, ownerId, type: "BUYER" } });
+
+      const key = `transactions/${transaction.id}/contract.pdf`;
+      const filePath = path.join(storageRoot, key);
+      await mkdir(path.dirname(filePath), { recursive: true });
+      await writeFile(filePath, "contract bytes");
+
+      const document = await db.document.create({
+        data: {
+          filename: "contract.pdf",
+          documentType: "CONTRACT",
+          storagePath: key,
+          fileSize: 14,
+          mimeType: "application/pdf",
+          uploadedByUserId: ownerId,
+          transactionId: transaction.id,
+        },
+      });
+      await db.contractInformation.create({
+        data: { transactionId: transaction.id, documentId: document.id, ownerId },
+      });
+
+      return { document, filePath };
+    }
+
+    it("refuses to delete a document with ContractInformation built from it, leaving the file and row untouched", async () => {
+      // Regression test: this reproduces a real bug found while auditing
+      // deletion/retention design for future document-carrying features
+      // (see prisma/schema.prisma's Document model comment). Before this
+      // fix, deleteDocument deleted the file first and only then hit
+      // Postgres's onDelete: Restrict constraint on document.delete(),
+      // which threw — leaving the file permanently gone but the row
+      // (uselessly) still present. The fix checks for this relation
+      // before ever touching storage.
+      const owner = await createTestUser();
+      const { document, filePath } = await createContractDocumentWithInformation(owner.id);
+
+      const result = await deleteDocument(owner.id, document.id, getTestDb(), storage);
+
+      expect(result.outcome).toBe("protected");
+      expect(existsSync(filePath)).toBe(true);
+      const bytesOnDisk = await readFile(filePath, "utf8");
+      expect(bytesOnDisk).toBe("contract bytes");
+      const row = await getTestDb().document.findUnique({ where: { id: document.id } });
+      expect(row).not.toBeNull();
+    });
+
+    it("still deletes an ordinary CONTRACT document that has no ContractInformation row", async () => {
+      const owner = await createTestUser();
+      const db = getTestDb();
+      const contact = await createTestContact(owner.id);
+      const client = await db.client.create({ data: { contactId: contact.id, ownerId: owner.id, type: "BUYER" } });
+      const transaction = await db.transaction.create({
+        data: { clientId: client.id, ownerId: owner.id, type: "BUYER" },
+      });
+      const key = `transactions/${transaction.id}/draft-contract.pdf`;
+      const filePath = path.join(storageRoot, key);
+      await mkdir(path.dirname(filePath), { recursive: true });
+      await writeFile(filePath, "draft bytes");
+      const document = await db.document.create({
+        data: {
+          filename: "draft-contract.pdf",
+          documentType: "CONTRACT",
+          storagePath: key,
+          fileSize: 12,
+          mimeType: "application/pdf",
+          uploadedByUserId: owner.id,
+          transactionId: transaction.id,
+        },
+      });
+
+      const result = await deleteDocument(owner.id, document.id, getTestDb(), storage);
+
+      expect(result).toEqual({ outcome: "deleted", transactionId: transaction.id });
+      expect(existsSync(filePath)).toBe(false);
+    });
+  });
 });

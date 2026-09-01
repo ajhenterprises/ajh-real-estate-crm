@@ -72,14 +72,21 @@ this codebase.
   identical regardless of what time zone the app happens to be deployed in,
   and is deliberately scoped to date-only semantics — timestamp fields like
   `createdAt`/`updatedAt`/`completedDate`/`confirmedAt` are unaffected.
-- **Document deletion is file-first, DB-row-second**: `deleteDocument`
-  (`src/lib/documents/mutations.ts`) removes the physical file before the
-  database row, treating "already missing" (`ENOENT`) as success and
-  aborting before touching the row on any other storage error. This means a
-  failure can only ever leave a stale-but-harmless DB row, never an orphaned
-  file with no trace of it — see Backup & Recovery below for the one
-  exception (direct database administration bypassing this path) and its
-  manual cleanup tool.
+- **Document deletion is file-first, DB-row-second, and checks deletion
+  protection first**: `deleteDocument` (`src/lib/documents/mutations.ts`)
+  removes the physical file before the database row, treating "already
+  missing" (`ENOENT`) as success and aborting before touching the row on
+  any other storage error. This means a failure can only ever leave a
+  stale-but-harmless DB row, never an orphaned file with no trace of it —
+  see Backup & Recovery below for the one exception (direct database
+  administration bypassing this path) and its manual cleanup tool. Before
+  any of that, it checks whether the document is protected from deletion
+  at all — today that means a `ContractInformation` record built from it
+  (`onDelete: Restrict` in the schema); this check running *before* the
+  file delete, not after, is itself a fix (see git history/commit message
+  for the bug it closes) and is the intended extension point for a future
+  document-carrying feature (e.g. a not-yet-built tax/expense record) that
+  needs its own, different retention policy — see Document Storage below.
 
 ## Roadmap
 
@@ -172,6 +179,32 @@ codebase — every value above comes only from the environment.
   bucket; that would need a separate tool built against the provider's
   listing API, which isn't needed until production actually adopts the
   `s3` driver.
+
+### Future document-carrying features (e.g. tax/expense tracking)
+
+Nothing about `StorageAdapter` or the R2/S3 backend is specific to
+contacts, clients, or transactions — `storagePath` is an opaque key, and
+neither adapter knows or cares what owns a document. A future feature that
+attaches its own documents (receipts, invoices, mileage logs, ...) reuses
+this exact storage layer and bucket, the same way `Contact`/`Client`/
+`Transaction` already do: one more nullable foreign key on `Document`
+(e.g. `expenseRecordId`), a new key prefix (e.g.
+`expenses/{id}/{uuid}.ext`), and one more clause in `deleteDocument`'s
+ownership check — never a second storage system.
+
+Retention is designed the same way, and is already proven, not just
+planned: `ContractInformation` documents are protected from deletion via
+`onDelete: Restrict` in the schema, and `deleteDocument`
+(`src/lib/documents/mutations.ts`) checks for that relation *before*
+touching storage — never after, which was itself a bug this fixed (a
+protected file was previously destroyed before the database constraint
+ever got a chance to block anything). A future retention policy — e.g. a
+tax/expense record's documents needing to survive longer, or under
+different rules, than an ordinary project document — plugs into that same
+pre-storage-delete check. No retention rules are implemented for a
+tax/expense feature today, because that feature doesn't exist yet; the
+point is only that adding one later is a small, additive change to an
+existing, already-working check, not a redesign.
 
 ## Getting started
 

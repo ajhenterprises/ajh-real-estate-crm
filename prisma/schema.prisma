@@ -516,7 +516,8 @@ enum DocumentStatus {
 
 // Document deletion (Phase 8): src/lib/documents/mutations.ts's deleteDocument
 // is the only application code path that intentionally removes a Document —
-// it deletes the physical file first, then this row, so the two can never
+// it checks deletion-protection relations (see contractInformation below),
+// then deletes the physical file, then this row, so the two can never
 // silently diverge for an in-app deletion (see that file's own comment for
 // the exact failure-order reasoning).
 //
@@ -529,6 +530,18 @@ enum DocumentStatus {
 // not silently unaddressed: scripts/find-orphaned-documents.ts is a
 // manually-invoked reconciliation tool for exactly this case — it is never
 // run automatically.
+//
+// Storage reuse for future document-carrying features: nothing about
+// storage is specific to contacts/clients/transactions — `storagePath` is
+// an opaque key, and src/lib/storage's StorageAdapter (local disk in dev,
+// any S3-compatible bucket, e.g. Cloudflare R2, in production) has no
+// knowledge of what owns a document. A future record type (e.g. an
+// expense/tax record, not built yet) reuses the same storage layer and R2
+// bucket exactly the way contactId/clientId/transactionId already do:
+// one more nullable FK column here (e.g. expenseRecordId), a new key
+// prefix (e.g. "expenses/{id}/{uuid}.ext"), and one more clause in
+// deleteDocument's ownership OR — no second storage system, no schema
+// redesign. Not built now because that future model doesn't exist yet.
 model Document {
   id           String         @id @default(cuid())
   filename     String
@@ -561,8 +574,16 @@ model Document {
 
   // A CONTRACT-type document may have exactly one structured
   // ContractInformation record built from it. Restrict (not Cascade orphan
-  // deletion elsewhere handles): a document with confirmed contract
-  // information behind it can't be silently deleted out from under it.
+  // deletion elsewhere handles): a document with contract information
+  // behind it can't be deleted out from under it. deleteDocument checks
+  // for this relation itself, before touching storage, so the file is
+  // never destroyed only for this constraint to then block the row
+  // delete — this is the model for how a future retention rule (e.g. a
+  // not-yet-built tax/expense record needing to protect its receipts from
+  // deletion under a different policy than ordinary project documents)
+  // should be wired in: one more existence check in deleteDocument,
+  // before storage.delete(), same pattern, no schema change required here
+  // beyond whatever the future model itself needs.
   contractInformation ContractInformation?
 
   createdAt DateTime @default(now())

@@ -23,11 +23,30 @@ import { getStorageAdapter, type StorageAdapter } from "@/lib/storage";
  * problem this exists to close. Deleting twice is safe: the second call's
  * ownership lookup simply finds nothing and reports "not-found", the same
  * silent-no-op convention every other action in this codebase already uses.
+ *
+ * Deletion protection — checked BEFORE any storage mutation: some
+ * documents must never be deleted at all, regardless of what happens to
+ * the file. `ContractInformation.document` already declares this via
+ * `onDelete: Restrict` (a CONTRACT document with confirmed contract
+ * information behind it can't be deleted out from under it) — but that
+ * constraint only fires on the *database row* delete, which used to run
+ * *after* the file was already gone from storage, so a "protected"
+ * document's file was destroyed anyway, unrecoverably, before Postgres
+ * ever got a chance to object (reproduced directly against the real
+ * Restrict constraint while designing this fix). The check below queries
+ * for that same protecting relation up front and refuses to touch
+ * anything — file included — if it's present. This is also the single
+ * place a future protection rule must be added (e.g. a not-yet-built
+ * tax/expense record with its own retention requirement): another
+ * `db.<futureModel>.findUnique/findFirst` check alongside the one below,
+ * still before `storage.delete()`. Never move a protection check to after
+ * the storage delete — that's exactly the bug this fixes.
  */
 
 export type DeleteDocumentResult =
   | { outcome: "deleted"; transactionId: string | null }
   | { outcome: "not-found" }
+  | { outcome: "protected"; reason: string }
   | { outcome: "storage-error"; error: unknown };
 
 function isFileNotFoundError(error: unknown): boolean {
@@ -51,6 +70,17 @@ export async function deleteDocument(
     },
   });
   if (!document) return { outcome: "not-found" };
+
+  const contractInformation = await db.contractInformation.findUnique({
+    where: { documentId: document.id },
+    select: { id: true },
+  });
+  if (contractInformation) {
+    return {
+      outcome: "protected",
+      reason: "This document has contract information built from it and can't be deleted.",
+    };
+  }
 
   try {
     await storage.delete(document.storagePath);
