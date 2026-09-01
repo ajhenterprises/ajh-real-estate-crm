@@ -22,7 +22,20 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/document
     return new Response("Not found", { status: 404 });
   }
 
-  const bytes = await getStorageAdapter().get(document.storagePath);
+  let bytes: Buffer;
+  try {
+    bytes = await getStorageAdapter().get(document.storagePath);
+  } catch (error) {
+    // A row with no file behind it (e.g. deleted out-of-band, or a DB
+    // delete that failed after a successful file delete — see
+    // src/lib/documents/mutations.ts) should read as "not found," not
+    // crash the request.
+    const isFileNotFoundError =
+      typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT";
+    if (!isFileNotFoundError) throw error;
+    return new Response("Not found", { status: 404 });
+  }
+
   const asAttachment = request.nextUrl.searchParams.get("download") === "1";
   const safeFilename = document.filename.replace(/["\r\n]/g, "");
 

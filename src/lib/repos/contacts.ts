@@ -8,6 +8,7 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import type { ContactType } from "@/generated/prisma/enums";
+import { endOfTodayUTC } from "@/lib/format";
 
 // Every query here is scoped to `ownerId` for the current session user —
 // a contact id alone (however it reaches the server) is never sufficient
@@ -40,16 +41,6 @@ function contactOrderBy(sort: ContactSort | undefined) {
   }
 }
 
-// Same local-server-time "today" boundary already used throughout
-// dashboard.ts/repos/tasks.ts — see needsFollowUp's own doc comment for why
-// this phase deliberately doesn't introduce a UTC-based boundary here.
-function endOfTodayLocal(): Date {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() + 1);
-  return start;
-}
-
 // Scoped to `ownerId` for the current session user — every filter is
 // additive on top of that, never a substitute for it.
 export function listContacts(
@@ -64,7 +55,7 @@ export function listContacts(
       ownerId: userId,
       ...(type ? { contactType: type } : {}),
       ...(followUp === "needs"
-        ? { nextFollowUpDate: { lt: endOfTodayLocal() } }
+        ? { nextFollowUpDate: { lt: endOfTodayUTC() } }
         : followUp === "none"
           ? { nextFollowUpDate: null }
           : {}),

@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import type { TaskPriority, TaskStatus } from "@/generated/prisma/enums";
+import { startOfTodayUTC } from "@/lib/format";
 
 export type TaskStatusFilter = "PENDING" | "COMPLETED" | "CANCELLED" | "OVERDUE";
 export type TaskRelationshipFilter = "TRANSACTION" | "CLIENT" | "GENERAL";
@@ -20,12 +21,6 @@ const taskInclude = {
   transactionEvent: { select: { id: true, eventType: true, title: true, date: true } },
 } as const;
 
-function startOfToday(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
 // Buckets tasks into "actionable work first": overdue, due today, upcoming,
 // no due date, then completed, then cancelled — the default ordering the
 // global Tasks page and dashboard should agree on regardless of which
@@ -35,9 +30,9 @@ function smartBucket(task: { status: TaskStatus; dueDate: Date | null }): number
   if (task.status === "COMPLETED") return 4;
   if (!task.dueDate) return 3;
 
-  const today = startOfToday();
+  const today = startOfTodayUTC();
   const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
 
   if (task.dueDate < today) return 0;
   if (task.dueDate < tomorrow) return 1;
@@ -83,7 +78,7 @@ export async function listTasks(userId: string, filters: TaskListFilters = {}) {
       assignedUserId: userId,
       ...(priority ? { priority } : {}),
       ...(status === "OVERDUE"
-        ? { status: "PENDING", dueDate: { lt: startOfToday() } }
+        ? { status: "PENDING", dueDate: { lt: startOfTodayUTC() } }
         : status
           ? { status }
           : {}),

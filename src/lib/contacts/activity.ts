@@ -38,3 +38,22 @@ export function getLastContactedActivity<T extends { type: ContactActivityType }
 ): T | null {
   return activitiesNewestFirst.find((activity) => isContactTouchpointType(activity.type)) ?? null;
 }
+
+/**
+ * Zod preprocess step for the manual activity-log "notes" field: a
+ * whitespace-only submission ("   ", "\t\n") is treated exactly like a
+ * blank one (`undefined`), not like real content.
+ *
+ * This is deliberately its own function rather than reusing
+ * contacts/actions.ts's shared `emptyToUndefined` (Phase 8 fix): that
+ * helper checks the *raw* value against `""` before Zod's `.trim()` runs,
+ * so whitespace-only input survives to become `""` after trimming — which
+ * then bypasses `notes ?? CONTACT_ACTIVITY_DEFAULT_DESCRIPTIONS[type]` and
+ * persists an empty `ContactActivity.description`. Scoping the fix to a
+ * dedicated function (used only for this one field) avoids changing
+ * behavior for every other optional text field that shares the general
+ * helper.
+ */
+export function blankStringToUndefined(value: unknown): unknown {
+  return typeof value === "string" && value.trim() === "" ? undefined : value;
+}

@@ -6,7 +6,10 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    // scripts/**: Phase 8's standalone ops scripts (backup/restore, orphan
+    // reconciliation) live outside src/, matching prisma/seed.ts's existing
+    // placement — their pure/testable logic is tested the same way.
+    include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
     // DB-backed *.integration.test.ts files (see src/test/db.ts) all share
     // one physical test database and truncate its tables in `beforeEach` —
     // running test files in parallel let two files' truncates race and

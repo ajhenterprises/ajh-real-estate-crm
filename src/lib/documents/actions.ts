@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
 import { getStorageAdapter } from "@/lib/storage";
+import { deleteDocument } from "@/lib/documents/mutations";
 import {
   ALLOWED_DOCUMENT_MIME_TYPES,
   MAX_DOCUMENT_SIZE_BYTES,
@@ -113,4 +114,28 @@ export async function archiveDocumentAction(formData: FormData) {
   await prisma.document.update({ where: { id: document.id }, data: { status: "ARCHIVED" } });
 
   if (document.transactionId) revalidatePath(`/transactions/${document.transactionId}`);
+}
+
+/**
+ * Permanently deletes a document — file and database row both — unlike
+ * archive above, which only flips a status flag and never touches storage.
+ * The actual owner-scoped, failure-ordered deletion logic lives in
+ * src/lib/documents/mutations.ts so it's independently testable against
+ * the dedicated test database. A storage error other than "already
+ * missing" leaves both the row and file in place for the agent to retry;
+ * nothing here surfaces that as a form error today (this is a
+ * fire-and-forget action, matching archiveDocumentAction's shape above),
+ * but it never silently orphans a file either way.
+ */
+export async function deleteDocumentAction(formData: FormData) {
+  const session = await requireSession();
+
+  const documentId = formData.get("documentId");
+  if (typeof documentId !== "string") return;
+
+  const result = await deleteDocument(session.user.id, documentId);
+  if (result.outcome !== "deleted") return;
+
+  revalidatePath("/documents");
+  if (result.transactionId) revalidatePath(`/transactions/${result.transactionId}`);
 }

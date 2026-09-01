@@ -4,7 +4,7 @@ import { requireSession } from "@/lib/auth/session";
 import { getTransactionById } from "@/lib/repos/transactions";
 import { setTransactionEventStatusAction } from "@/lib/transactions/actions";
 import { cancelTaskAction, completeTaskAction, reopenTaskAction } from "@/lib/tasks/actions";
-import { archiveDocumentAction } from "@/lib/documents/actions";
+import { archiveDocumentAction, deleteDocumentAction } from "@/lib/documents/actions";
 import { createContractInformationAction } from "@/lib/contracts/actions";
 import { summarizeTaskProgress } from "@/lib/tasks/progress";
 import { deriveContractStatus, CONTRACT_STATUS_LABELS } from "@/lib/contracts/status";
@@ -372,6 +372,15 @@ export default async function TransactionDetailPage(props: PageProps<"/transacti
                           </button>
                         </form>
                       ) : null}
+                      <form action={deleteDocumentAction}>
+                        <input type="hidden" name="documentId" value={document.id} />
+                        <button
+                          type="submit"
+                          className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-status-attention hover:bg-surface-muted"
+                        >
+                          Delete
+                        </button>
+                      </form>
                     </div>
                   </div>
                 ))}

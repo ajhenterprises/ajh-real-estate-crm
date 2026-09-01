@@ -514,6 +514,21 @@ enum DocumentStatus {
   ARCHIVED
 }
 
+// Document deletion (Phase 8): src/lib/documents/mutations.ts's deleteDocument
+// is the only application code path that intentionally removes a Document —
+// it deletes the physical file first, then this row, so the two can never
+// silently diverge for an in-app deletion (see that file's own comment for
+// the exact failure-order reasoning).
+//
+// The onDelete: Cascade relations below are a separate, currently-unused
+// path: if a User/Transaction/Client/Contact row were ever deleted — no
+// application code does this today, only direct database administration —
+// Postgres cascades the Document rows away at the DB level, with no
+// opportunity for deleteDocument's file-cleanup logic to run. That leaves
+// an orphaned file with no DB trace. This is a known, accepted limitation,
+// not silently unaddressed: scripts/find-orphaned-documents.ts is a
+// manually-invoked reconciliation tool for exactly this case — it is never
+// run automatically.
 model Document {
   id           String         @id @default(cuid())
   filename     String

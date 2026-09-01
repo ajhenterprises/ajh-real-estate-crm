@@ -7,7 +7,7 @@ import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
 import { Prisma } from "@/generated/prisma/client";
 import { createContactActivity, setContactFollowUpDate } from "@/lib/contacts/mutations";
-import { CONTACT_ACTIVITY_DEFAULT_DESCRIPTIONS } from "@/lib/contacts/activity";
+import { blankStringToUndefined, CONTACT_ACTIVITY_DEFAULT_DESCRIPTIONS } from "@/lib/contacts/activity";
 
 const CONTACT_TYPES = ["LEAD", "CLIENT", "PAST_CLIENT", "VENDOR", "OTHER"] as const;
 const CONTACT_SOURCES = [
@@ -186,7 +186,7 @@ const CONTACT_ACTIVITY_LOG_TYPES = ["CALL", "EMAIL", "TEXT", "SHOWING", "NOTE_AD
 const logActivitySchema = z.object({
   contactId: z.string().min(1),
   type: z.enum(CONTACT_ACTIVITY_LOG_TYPES),
-  notes: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+  notes: z.preprocess(blankStringToUndefined, z.string().trim().optional()),
 });
 
 export interface LogContactActivityState {

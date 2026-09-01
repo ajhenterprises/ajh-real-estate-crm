@@ -5,17 +5,23 @@
 // imported by the dashboard server component — see src/app/(app)/page.tsx.
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
+import { endOfTodayUTC, startOfTodayUTC } from "@/lib/format";
 
 /**
  * Every query here is scoped to `ownerId`/`assignedUserId` for the current
  * session user — this is the authorization boundary for dashboard data.
  * Nothing here trusts a caller-supplied id.
+ *
+ * "Today" boundaries all come from format.ts's startOfTodayUTC/endOfTodayUTC
+ * (UTC calendar day, matching how date-only fields are stored) rather than
+ * local server time — Phase 8 fixed this file's 8 boundary computations,
+ * which previously used `setHours(0,0,0,0)` (local time) and only agreed
+ * with the UTC storage convention because this app has so far only run on
+ * UTC-configured hosts.
  */
 export async function getDashboardSummary(userId: string) {
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const endOfToday = new Date(startOfToday);
-  endOfToday.setDate(endOfToday.getDate() + 1);
+  const startOfToday = startOfTodayUTC();
+  const endOfToday = endOfTodayUTC();
 
   const [
     activeTransactionsCount,
@@ -62,11 +68,8 @@ export async function getDashboardSummary(userId: string) {
 }
 
 export async function getOverdueTasks(userId: string) {
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-
   return prisma.task.findMany({
-    where: { assignedUserId: userId, status: "PENDING", dueDate: { lt: startOfToday } },
+    where: { assignedUserId: userId, status: "PENDING", dueDate: { lt: startOfTodayUTC() } },
     orderBy: { dueDate: "asc" },
     include: { transaction: true, client: { include: { contact: true } } },
     take: 10,
@@ -74,14 +77,11 @@ export async function getOverdueTasks(userId: string) {
 }
 
 export async function getOverdueDeadlines(userId: string) {
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-
   return prisma.transactionEvent.findMany({
     where: {
       transaction: { ownerId: userId },
       status: "PENDING",
-      date: { lt: startOfToday },
+      date: { lt: startOfTodayUTC() },
     },
     orderBy: { date: "asc" },
     include: { transaction: { include: { client: { include: { contact: true } } } } },
@@ -90,16 +90,11 @@ export async function getOverdueDeadlines(userId: string) {
 }
 
 export async function getTasksDueToday(userId: string) {
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const endOfToday = new Date(startOfToday);
-  endOfToday.setDate(endOfToday.getDate() + 1);
-
   return prisma.task.findMany({
     where: {
       assignedUserId: userId,
       status: "PENDING",
-      dueDate: { gte: startOfToday, lt: endOfToday },
+      dueDate: { gte: startOfTodayUTC(), lt: endOfTodayUTC() },
     },
     orderBy: { priority: "desc" },
     include: { transaction: true, client: { include: { contact: true } } },
@@ -107,15 +102,11 @@ export async function getTasksDueToday(userId: string) {
 }
 
 export async function getUpcomingTasks(userId: string) {
-  const endOfToday = new Date();
-  endOfToday.setHours(0, 0, 0, 0);
-  endOfToday.setDate(endOfToday.getDate() + 1);
-
   return prisma.task.findMany({
     where: {
       assignedUserId: userId,
       status: "PENDING",
-      dueDate: { gte: endOfToday },
+      dueDate: { gte: endOfTodayUTC() },
     },
     orderBy: { dueDate: "asc" },
     include: { transaction: true, client: { include: { contact: true } } },
@@ -124,14 +115,11 @@ export async function getUpcomingTasks(userId: string) {
 }
 
 export async function getUpcomingDeadlines(userId: string) {
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-
   return prisma.transactionEvent.findMany({
     where: {
       transaction: { ownerId: userId },
       status: "PENDING",
-      date: { gte: startOfToday },
+      date: { gte: startOfTodayUTC() },
     },
     orderBy: { date: "asc" },
     include: { transaction: { include: { client: { include: { contact: true } } } } },
@@ -140,14 +128,11 @@ export async function getUpcomingDeadlines(userId: string) {
 }
 
 export async function getUpcomingClosings(userId: string) {
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-
   return prisma.transaction.findMany({
     where: {
       ownerId: userId,
       status: { in: ["ACTIVE", "UNDER_CONTRACT", "PENDING"] },
-      expectedClosingDate: { gte: startOfToday },
+      expectedClosingDate: { gte: startOfTodayUTC() },
     },
     orderBy: { expectedClosingDate: "asc" },
     include: { client: { include: { contact: true } } },
@@ -179,13 +164,8 @@ export async function getActiveTransactions(userId: string) {
  * can be exercised against the dedicated test database; see src/test/db.ts.
  */
 export async function getContactsNeedingFollowUp(userId: string, db: Prisma.TransactionClient = prisma) {
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const endOfToday = new Date(startOfToday);
-  endOfToday.setDate(endOfToday.getDate() + 1);
-
   return db.contact.findMany({
-    where: { ownerId: userId, nextFollowUpDate: { lt: endOfToday } },
+    where: { ownerId: userId, nextFollowUpDate: { lt: endOfTodayUTC() } },
     orderBy: { nextFollowUpDate: "asc" },
     take: 10,
   });

@@ -45,3 +45,6 @@ next-env.d.ts
 
 # locally stored uploaded documents (see src/lib/storage)
 /.data
+
+# local database backups produced by scripts/backup-database.ts
+/backups

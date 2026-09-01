@@ -48,3 +48,27 @@ export function toDateInputValue(date: Date | null | undefined): string | undefi
   const day = String(date.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
+/**
+ * Start of "today," UTC — the boundary every overdue/due-today/upcoming
+ * computation in this app must use, to agree with how date-only values are
+ * stored (see the module comment above) and displayed (toDateInputValue/
+ * formatDate). Using local server time here instead (`setHours(0,0,0,0)`)
+ * was Phase 8's fix target: it silently agreed with UTC only because this
+ * app has so far only run on UTC-configured hosts.
+ *
+ * `now` defaults to the real current instant; tests pass a fixed value so
+ * boundary behavior is deterministic regardless of when/where the suite runs.
+ */
+export function startOfTodayUTC(now: Date = new Date()): Date {
+  const start = new Date(now);
+  start.setUTCHours(0, 0, 0, 0);
+  return start;
+}
+
+/** Start of "tomorrow," UTC — the exclusive upper bound for "today." */
+export function endOfTodayUTC(now: Date = new Date()): Date {
+  const end = startOfTodayUTC(now);
+  end.setUTCDate(end.getUTCDate() + 1);
+  return end;
+}

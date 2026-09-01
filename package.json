@@ -13,7 +13,10 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "db:seed": "tsx --env-file=.env prisma/seed.ts"
+    "db:seed": "tsx --env-file=.env prisma/seed.ts",
+    "db:backup": "tsx --env-file=.env scripts/backup-database.ts",
+    "db:restore": "tsx --env-file=.env scripts/restore-database.ts",
+    "db:find-orphaned-documents": "tsx --env-file=.env scripts/find-orphaned-documents.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
