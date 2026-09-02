@@ -348,6 +348,7 @@ npm run dev             # http://localhost:3000
 | `npm test` | Vitest |
 | `npm run db:migrate` | Apply Prisma migrations (dev) |
 | `npm run db:migrate:deploy` | Apply Prisma migrations (prod) |
+| `npm run vercel-build` | `db:migrate:deploy && next build` — not automatically used by Vercel's Next.js framework preset; on Vercel, this same command must be set explicitly as a **Build Command override** in Project Settings → Build & Development Settings, or migrations silently never run |
 | `npm run db:studio` | Prisma Studio |
 | `npm run db:seed` | Create/update the bootstrap user (`SEED_USER_EMAIL`/`SEED_USER_PASSWORD`/`SEED_USER_NAME` env vars) |
 | `npm run db:backup` | Dump the database at `DATABASE_URL` to a timestamped `.sql` file — see Backup & Recovery |
