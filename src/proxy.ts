@@ -13,7 +13,9 @@ const { auth } = NextAuth(edgeAuthConfig);
 export default auth((req) => {
   const isLoggedIn = Boolean(req.auth?.user);
   const isPublicPath =
-    req.nextUrl.pathname === "/login" || req.nextUrl.pathname.startsWith("/api/auth");
+    req.nextUrl.pathname === "/login" ||
+    req.nextUrl.pathname === "/setup" ||
+    req.nextUrl.pathname.startsWith("/api/auth");
 
   if (!isLoggedIn && !isPublicPath) {
     const loginUrl = new URL("/login", req.nextUrl.origin);
