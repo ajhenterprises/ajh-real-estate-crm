@@ -9,6 +9,15 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // CLI operations (migrate, validate, studio) need a direct, non-pooled
+    // connection: the migration engine relies on session-level state
+    // (advisory locks, a long-lived DDL session) that a transaction-mode
+    // pooler (PgBouncer/Supavisor — what most managed Postgres "pooled"
+    // connection strings route through, Neon and Supabase both included)
+    // cannot sustain. Falls back to DATABASE_URL when DIRECT_URL isn't set,
+    // so local development (a single unpooled Postgres instance) needs no
+    // extra variable. The application itself (src/lib/db.ts) always uses
+    // DATABASE_URL directly and is unaffected by this fallback.
+    url: process.env["DIRECT_URL"] || process.env["DATABASE_URL"],
   },
 });
