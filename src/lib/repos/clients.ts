@@ -64,8 +64,14 @@ export function listClients(userId: string, filters: ClientListFilters = {}) {
   });
 }
 
-export function getClientById(userId: string, clientId: string) {
-  return prisma.client.findFirst({
+/**
+ * Showings are fetched separately rather than as a nested `include` — see
+ * the matching comment on getContactById (src/lib/repos/contacts.ts) for
+ * why: a showing booked from this same person's Contact page (contactId
+ * set, clientId null) must still show up here.
+ */
+export async function getClientById(userId: string, clientId: string) {
+  const client = await prisma.client.findFirst({
     where: { id: clientId, ownerId: userId },
     include: {
       contact: { include: { activities: { orderBy: { createdAt: "desc" }, take: 20 } } },
@@ -77,12 +83,19 @@ export function getClientById(userId: string, clientId: string) {
         where: { status: "PENDING" },
         orderBy: { dueDate: "asc" },
       },
-      showings: {
-        where: { status: "SCHEDULED" },
-        orderBy: { scheduledAt: "asc" },
-      },
     },
   });
+  if (!client) return null;
+
+  const showings = await prisma.showing.findMany({
+    where: {
+      status: "SCHEDULED",
+      OR: [{ clientId: client.id }, { contactId: client.contactId }],
+    },
+    orderBy: { scheduledAt: "asc" },
+  });
+
+  return { ...client, showings };
 }
 
 export function getPreviousTransactionsForClient(userId: string, clientId: string) {

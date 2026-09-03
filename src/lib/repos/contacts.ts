@@ -75,8 +75,16 @@ export function listContacts(
   });
 }
 
-export function getContactById(userId: string, contactId: string, db: Prisma.TransactionClient = prisma) {
-  return db.contact.findFirst({
+/**
+ * Showings are fetched separately rather than as a nested `include` because
+ * a contact who is also a client should see showings booked either way —
+ * from their Contact page (contactId set) or from their Client page
+ * (clientId set) — and Prisma's nested-include `where` can't express an OR
+ * across a sibling relation's id. See getClientById below for the mirror
+ * image of this same fix.
+ */
+export async function getContactById(userId: string, contactId: string, db: Prisma.TransactionClient = prisma) {
+  const contact = await db.contact.findFirst({
     where: { id: contactId, ownerId: userId },
     include: {
       client: {
@@ -92,15 +100,22 @@ export function getContactById(userId: string, contactId: string, db: Prisma.Tra
         orderBy: { dueDate: "asc" },
         take: 10,
       },
-      showings: {
-        where: { status: "SCHEDULED" },
-        orderBy: { scheduledAt: "asc" },
-        take: 10,
-      },
       activities: {
         orderBy: { createdAt: "desc" },
         take: 20,
       },
     },
   });
+  if (!contact) return null;
+
+  const showings = await db.showing.findMany({
+    where: {
+      status: "SCHEDULED",
+      OR: [{ contactId: contact.id }, ...(contact.client ? [{ clientId: contact.client.id }] : [])],
+    },
+    orderBy: { scheduledAt: "asc" },
+    take: 10,
+  });
+
+  return { ...contact, showings };
 }
