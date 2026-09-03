@@ -29,7 +29,7 @@ export function BrandingForm({ settings, hasLogo }: { settings: BrandSettings; h
           <img
             src="/api/branding/logo"
             alt="Current logo"
-            className="h-16 w-auto rounded border border-border bg-surface-muted object-contain p-2"
+            className="h-32 w-full max-w-xs rounded border border-border bg-surface-muted object-contain p-3"
           />
         ) : (
           <p className="text-sm text-muted-foreground">No logo uploaded yet.</p>

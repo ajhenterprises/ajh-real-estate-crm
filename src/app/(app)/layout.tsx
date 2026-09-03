@@ -23,9 +23,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       }
     >
       <aside className="flex w-56 flex-col border-r border-border bg-surface">
-        <div className="flex h-14 items-center gap-2 border-b border-border px-4">
+        <div className="flex h-24 items-center gap-2 border-b border-border px-4">
           {brand.logoStoragePath ? (
-            <img src="/api/branding/logo" alt={companyName} className="h-8 w-auto object-contain" />
+            <img
+              src="/api/branding/logo"
+              alt={companyName}
+              className="h-20 w-full object-contain object-left"
+            />
           ) : (
             <span className="text-sm font-semibold text-primary">{companyName}</span>
           )}
