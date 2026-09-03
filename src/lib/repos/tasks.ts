@@ -4,7 +4,7 @@ import type { TaskPriority, TaskStatus } from "@/generated/prisma/enums";
 import { startOfTodayUTC } from "@/lib/format";
 
 export type TaskStatusFilter = "PENDING" | "COMPLETED" | "CANCELLED" | "OVERDUE";
-export type TaskRelationshipFilter = "TRANSACTION" | "CLIENT" | "GENERAL";
+export type TaskRelationshipFilter = "TRANSACTION" | "CLIENT" | "CONTACT" | "GENERAL";
 export type TaskSort = "smart" | "due_date" | "priority" | "newest" | "oldest";
 
 export interface TaskListFilters {
@@ -18,6 +18,7 @@ export interface TaskListFilters {
 const taskInclude = {
   transaction: { select: { id: true, propertyAddress: true } },
   client: { include: { contact: true } },
+  contact: { select: { id: true, firstName: true, lastName: true } },
   transactionEvent: { select: { id: true, eventType: true, title: true, date: true } },
 } as const;
 
@@ -86,9 +87,11 @@ export async function listTasks(userId: string, filters: TaskListFilters = {}) {
         ? { transactionId: { not: null } }
         : relationship === "CLIENT"
           ? { transactionId: null, clientId: { not: null } }
-          : relationship === "GENERAL"
-            ? { transactionId: null, clientId: null, contactId: null }
-            : {}),
+          : relationship === "CONTACT"
+            ? { transactionId: null, clientId: null, contactId: { not: null } }
+            : relationship === "GENERAL"
+              ? { transactionId: null, clientId: null, contactId: null }
+              : {}),
       ...(search
         ? {
             OR: [
@@ -96,6 +99,8 @@ export async function listTasks(userId: string, filters: TaskListFilters = {}) {
               { transaction: { propertyAddress: { contains: search, mode: "insensitive" as const } } },
               { client: { contact: { firstName: { contains: search, mode: "insensitive" as const } } } },
               { client: { contact: { lastName: { contains: search, mode: "insensitive" as const } } } },
+              { contact: { firstName: { contains: search, mode: "insensitive" as const } } },
+              { contact: { lastName: { contains: search, mode: "insensitive" as const } } },
             ],
           }
         : {}),
@@ -113,9 +118,14 @@ export function getTaskById(userId: string, taskId: string) {
   });
 }
 
-/** Lightweight option lists for the client/transaction pickers on the task form. */
+/** Lightweight option lists for the contact/client/transaction pickers on the task form. */
 export async function listTaskFormOptions(userId: string) {
-  const [clients, transactions] = await Promise.all([
+  const [contacts, clients, transactions] = await Promise.all([
+    prisma.contact.findMany({
+      where: { ownerId: userId },
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: { lastName: "asc" },
+    }),
     prisma.client.findMany({
       where: { ownerId: userId },
       select: { id: true, contact: { select: { firstName: true, lastName: true } } },
@@ -128,5 +138,5 @@ export async function listTaskFormOptions(userId: string) {
     }),
   ]);
 
-  return { clients, transactions };
+  return { contacts, clients, transactions };
 }

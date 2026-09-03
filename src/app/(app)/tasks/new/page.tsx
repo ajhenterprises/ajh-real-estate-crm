@@ -13,7 +13,7 @@ export default async function NewTaskPage() {
       <div>
         <h1 className="text-2xl font-semibold text-foreground">New Task</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          General task, or tied to a client or transaction.
+          General task, or tied to a contact, client, or transaction.
         </p>
       </div>
 
