@@ -7,6 +7,9 @@ import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
 import { calculateContractEvents } from "@/lib/contracts/dates";
 import { isContractTaskEventType, reconcileContractDerivedTask } from "@/lib/contracts/task-sync";
+import { extractPdfText } from "@/lib/contracts/extract-pdf-text";
+import { parseContractText, type ParsedContractFields } from "@/lib/contracts/parse-fields";
+import { getStorageAdapter } from "@/lib/storage";
 
 const emptyToUndefined = (value: unknown) => (value === "" ? undefined : value);
 
@@ -94,6 +97,63 @@ export async function createContractInformationAction(formData: FormData) {
 
   const created = await prisma.contractInformation.create({
     data: { transactionId, documentId, ownerId: session.user.id },
+  });
+
+  revalidatePath(`/transactions/${transactionId}`);
+  redirect(`/transactions/${transactionId}/contract-information/${created.id}/edit`);
+}
+
+/**
+ * Same entry point as createContractInformationAction, but pre-fills the
+ * draft from the uploaded contract's own text instead of leaving it blank —
+ * deterministic label/pattern matching only (see parse-fields.ts), never AI.
+ * A field the parser doesn't confidently match is left null exactly like
+ * the blank-draft flow leaves it, so this can never silently invent a
+ * value. The draft still lands on the same edit form as manual entry, and
+ * still requires an explicit Confirm before any TransactionEvent or Task is
+ * created — extraction only saves typing, it never bypasses review.
+ */
+export async function extractContractInformationAction(formData: FormData) {
+  const session = await requireSession();
+
+  const transactionId = formData.get("transactionId");
+  const documentId = formData.get("documentId");
+  if (typeof transactionId !== "string" || typeof documentId !== "string") return;
+
+  const document = await prisma.document.findFirst({
+    where: {
+      id: documentId,
+      transactionId,
+      documentType: "CONTRACT",
+      transaction: { ownerId: session.user.id },
+    },
+  });
+  if (!document) return;
+
+  const existing = await prisma.contractInformation.findUnique({ where: { documentId } });
+  if (existing) {
+    redirect(`/transactions/${transactionId}/contract-information/${existing.id}/edit`);
+  }
+
+  let fields: ParsedContractFields | null = null;
+  if (document.mimeType === "application/pdf") {
+    const body = await getStorageAdapter().get(document.storagePath);
+    const text = await extractPdfText(body);
+    if (text.trim().length > 0) fields = parseContractText(text);
+  }
+
+  const anyFieldFound = fields !== null && Object.values(fields).some((value) => value !== null);
+
+  const created = await prisma.contractInformation.create({
+    data: {
+      transactionId,
+      documentId,
+      ownerId: session.user.id,
+      ...(fields ?? {}),
+      notes: anyFieldFound
+        ? "Fields below were extracted automatically from the uploaded contract text. Review and correct anything before confirming."
+        : "Automatic extraction didn't find any recognizable fields in this document — enter the contract's details manually below.",
+    },
   });
 
   revalidatePath(`/transactions/${transactionId}`);

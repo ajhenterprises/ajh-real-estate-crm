@@ -6,7 +6,7 @@ import { setTransactionEventStatusAction } from "@/lib/transactions/actions";
 import { cancelTaskAction, completeTaskAction, reopenTaskAction } from "@/lib/tasks/actions";
 import { archiveDocumentAction, deleteDocumentAction, restoreDocumentAction } from "@/lib/documents/actions";
 import { DOCUMENT_DELETION_RETENTION_DAYS } from "@/lib/documents/mutations";
-import { createContractInformationAction } from "@/lib/contracts/actions";
+import { createContractInformationAction, extractContractInformationAction } from "@/lib/contracts/actions";
 import { summarizeTaskProgress } from "@/lib/tasks/progress";
 import { deriveContractStatus, CONTRACT_STATUS_LABELS } from "@/lib/contracts/status";
 import { formatFileSize } from "@/lib/documents/validation";
@@ -358,16 +358,31 @@ export default async function TransactionDetailPage(props: PageProps<"/transacti
                             View Contract Information
                           </Link>
                         ) : (
-                          <form action={createContractInformationAction}>
-                            <input type="hidden" name="transactionId" value={transaction.id} />
-                            <input type="hidden" name="documentId" value={document.id} />
-                            <button
-                              type="submit"
-                              className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
-                            >
-                              Enter Contract Information
-                            </button>
-                          </form>
+                          <>
+                            {document.mimeType === "application/pdf" ? (
+                              <form action={extractContractInformationAction}>
+                                <input type="hidden" name="transactionId" value={transaction.id} />
+                                <input type="hidden" name="documentId" value={document.id} />
+                                <button
+                                  type="submit"
+                                  className="rounded-md border border-accent px-2.5 py-1 text-xs font-medium text-accent hover:bg-surface-muted"
+                                  title="Reads the PDF's text and pre-fills dates it recognizes — no AI, and you still review and confirm everything before it creates any tasks."
+                                >
+                                  Extract Dates Automatically
+                                </button>
+                              </form>
+                            ) : null}
+                            <form action={createContractInformationAction}>
+                              <input type="hidden" name="transactionId" value={transaction.id} />
+                              <input type="hidden" name="documentId" value={document.id} />
+                              <button
+                                type="submit"
+                                className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
+                              >
+                                Enter Contract Information
+                              </button>
+                            </form>
+                          </>
                         )
                       ) : null}
                       {document.status === "PENDING_DELETION" ? (
