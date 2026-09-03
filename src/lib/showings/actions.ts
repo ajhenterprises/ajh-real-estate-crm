@@ -70,6 +70,35 @@ async function resolveShowingSubject(
   return { contactId: contactId ?? null, clientId: clientId ?? null };
 }
 
+/**
+ * Revalidates both the Contact and Client pages for whichever person a
+ * showing is tied to — not just whichever single id the showing itself
+ * carries. getContactById/getClientById (src/lib/repos/contacts.ts,
+ * clients.ts) show a showing on BOTH of that person's profile pages
+ * regardless of which one it's linked by (contactId or clientId); without
+ * resolving the counterpart here, the page that wasn't directly linked
+ * keeps serving Next.js's cached version indefinitely instead of picking
+ * up the new/changed showing.
+ */
+async function revalidateShowingSubjectPaths(contactId: string | null, clientId: string | null) {
+  let resolvedContactId = contactId;
+  let resolvedClientId = clientId;
+
+  if (contactId && !clientId) {
+    const contact = await prisma.contact.findUnique({
+      where: { id: contactId },
+      select: { client: { select: { id: true } } },
+    });
+    resolvedClientId = contact?.client?.id ?? null;
+  } else if (clientId && !contactId) {
+    const client = await prisma.client.findUnique({ where: { id: clientId }, select: { contactId: true } });
+    resolvedContactId = client?.contactId ?? null;
+  }
+
+  if (resolvedContactId) revalidatePath(`/contacts/${resolvedContactId}`);
+  if (resolvedClientId) revalidatePath(`/clients/${resolvedClientId}`);
+}
+
 /** Embedded quick-add, used on the Contact and Client profile pages — stays on the same page rather than redirecting, same convention as logContactActivityAction/setContactFollowUpDateAction. */
 export async function createShowingAction(
   _prevState: ShowingFormState | undefined,
@@ -100,8 +129,7 @@ export async function createShowingAction(
   revalidatePath("/showings");
   revalidatePath("/calendar");
   revalidatePath("/");
-  if (subject.contactId) revalidatePath(`/contacts/${subject.contactId}`);
-  if (subject.clientId) revalidatePath(`/clients/${subject.clientId}`);
+  await revalidateShowingSubjectPaths(subject.contactId, subject.clientId);
   return {};
 }
 
@@ -142,10 +170,8 @@ export async function updateShowingAction(
   revalidatePath(`/showings/${existing.id}`);
   revalidatePath("/calendar");
   revalidatePath("/");
-  if (existing.contactId) revalidatePath(`/contacts/${existing.contactId}`);
-  if (existing.clientId) revalidatePath(`/clients/${existing.clientId}`);
-  if (subject.contactId) revalidatePath(`/contacts/${subject.contactId}`);
-  if (subject.clientId) revalidatePath(`/clients/${subject.clientId}`);
+  await revalidateShowingSubjectPaths(existing.contactId, existing.clientId);
+  await revalidateShowingSubjectPaths(subject.contactId, subject.clientId);
   redirect(`/showings/${existing.id}`);
 }
 
@@ -183,8 +209,7 @@ async function setShowingStatus(showingId: string, status: "SCHEDULED" | "COMPLE
   revalidatePath(`/showings/${existing.id}`);
   revalidatePath("/calendar");
   revalidatePath("/");
-  if (existing.contactId) revalidatePath(`/contacts/${existing.contactId}`);
-  if (existing.clientId) revalidatePath(`/clients/${existing.clientId}`);
+  await revalidateShowingSubjectPaths(existing.contactId, existing.clientId);
 }
 
 export async function completeShowingAction(formData: FormData) {
