@@ -19,6 +19,7 @@ import { completeTaskAction } from "@/lib/tasks/actions";
 import { contactDisplayName, formatCurrency, formatDate } from "@/lib/format";
 import { deriveDeadlineStatus, deriveFollowUpStatus } from "@/lib/status";
 import { CONTACT_TYPE_LABELS } from "@/lib/labels";
+import { Greeting } from "@/components/dashboard/greeting";
 
 function greeting(): string {
   const hour = new Date().getHours();
@@ -93,7 +94,7 @@ export default async function DashboardPage() {
     <div className="flex flex-col gap-8">
       <div>
         <h1 className="text-2xl font-semibold text-foreground">
-          {greeting()}, {firstName}
+          <Greeting serverGreeting={greeting()} firstName={firstName} />
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {summary.activeTransactionsCount} active transaction
