@@ -30,20 +30,22 @@ export function SidebarNav() {
         })}
       </ul>
 
-      <div>
-        <p className="px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Coming later
-        </p>
-        <ul className="mt-1 flex flex-col gap-0.5">
-          {upcomingNavItems.map((item) => (
-            <li key={item.label}>
-              <span className="flex cursor-default items-center justify-between rounded-md px-3 py-2 text-sm text-muted-foreground/60">
-                {item.label}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {upcomingNavItems.length > 0 ? (
+        <div>
+          <p className="px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Coming later
+          </p>
+          <ul className="mt-1 flex flex-col gap-0.5">
+            {upcomingNavItems.map((item) => (
+              <li key={item.label}>
+                <span className="flex cursor-default items-center justify-between rounded-md px-3 py-2 text-sm text-muted-foreground/60">
+                  {item.label}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </nav>
   );
 }
