@@ -2,10 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { getContactById } from "@/lib/repos/contacts";
-import { convertToClientAction } from "@/lib/contacts/actions";
+import { convertToClientAction, deleteContactAction } from "@/lib/contacts/actions";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Select } from "@/components/ui/form";
+import { DeleteButton } from "@/components/ui/delete-button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { FollowUpForm } from "@/components/contacts/follow-up-form";
 import { LogActivityForm } from "@/components/contacts/log-activity-form";
@@ -27,31 +28,39 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <p className="text-sm text-muted-foreground">
-          <Link href="/contacts" className="hover:text-foreground">
-            Contacts
-          </Link>{" "}
-          / {contactDisplayName(contact)}
-        </p>
-        <div className="mt-1 flex items-center gap-3">
-          <h1 className="text-2xl font-semibold text-foreground">{contactDisplayName(contact)}</h1>
-          <span className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-            {CONTACT_TYPE_LABELS[contact.contactType]}
-          </span>
-          {followUpStatus === "overdue" || followUpStatus === "due-today" ? (
-            <StatusBadge
-              variant="attention"
-              label={followUpStatus === "overdue" ? "Follow-up overdue" : "Follow up today"}
-            />
-          ) : null}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm text-muted-foreground">
+            <Link href="/contacts" className="hover:text-foreground">
+              Contacts
+            </Link>{" "}
+            / {contactDisplayName(contact)}
+          </p>
+          <div className="mt-1 flex items-center gap-3">
+            <h1 className="text-2xl font-semibold text-foreground">{contactDisplayName(contact)}</h1>
+            <span className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+              {CONTACT_TYPE_LABELS[contact.contactType]}
+            </span>
+            {followUpStatus === "overdue" || followUpStatus === "due-today" ? (
+              <StatusBadge
+                variant="attention"
+                label={followUpStatus === "overdue" ? "Follow-up overdue" : "Follow up today"}
+              />
+            ) : null}
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Source: {CONTACT_SOURCE_LABELS[contact.source]}
+            {lastContacted
+              ? ` · Last contacted ${formatDateWithYear(lastContacted.createdAt)} (${CONTACT_ACTIVITY_TYPE_LABELS[lastContacted.type]})`
+              : " · Not contacted yet"}
+          </p>
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Source: {CONTACT_SOURCE_LABELS[contact.source]}
-          {lastContacted
-            ? ` · Last contacted ${formatDateWithYear(lastContacted.createdAt)} (${CONTACT_ACTIVITY_TYPE_LABELS[lastContacted.type]})`
-            : " · Not contacted yet"}
-        </p>
+        <Link
+          href={`/contacts/${contact.id}/edit`}
+          className="shrink-0 rounded-md border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-surface-muted"
+        >
+          Edit
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -201,6 +210,20 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
               )}
             </div>
           </Card>
+
+          {contact.client ? null : (
+            <Card>
+              <CardHeader title="Delete Contact" />
+              <div className="p-5">
+                <DeleteButton
+                  action={deleteContactAction}
+                  hiddenField={{ name: "contactId", value: contact.id }}
+                  confirmMessage={`Delete ${contactDisplayName(contact)}? This can't be undone.`}
+                  label="Delete contact"
+                />
+              </div>
+            </Card>
+          )}
         </div>
       </div>
     </div>

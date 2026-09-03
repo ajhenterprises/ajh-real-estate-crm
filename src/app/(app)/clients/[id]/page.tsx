@@ -4,6 +4,8 @@ import { requireSession } from "@/lib/auth/session";
 import { getClientById, getPreviousTransactionsForClient } from "@/lib/repos/clients";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { DeleteButton } from "@/components/ui/delete-button";
+import { deleteClientAction } from "@/lib/clients/actions";
 import { contactDisplayName, formatDate, formatDateWithYear } from "@/lib/format";
 import { CLIENT_STATUS_LABELS, CLIENT_TYPE_LABELS, TRANSACTION_STATUS_LABELS } from "@/lib/labels";
 
@@ -48,6 +50,12 @@ export default async function ClientDetailPage(props: PageProps<"/clients/[id]">
             className="rounded-md border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-surface-muted"
           >
             View Contact
+          </Link>
+          <Link
+            href={`/clients/${client.id}/edit`}
+            className="rounded-md border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-surface-muted"
+          >
+            Edit
           </Link>
           <Link
             href={`/clients/${client.id}/transactions/new`}
@@ -208,6 +216,20 @@ export default async function ClientDetailPage(props: PageProps<"/clients/[id]">
               </div>
             )}
           </Card>
+
+          {client.transactions.length === 0 && previousTransactions.length === 0 ? (
+            <Card>
+              <CardHeader title="Delete Client" />
+              <div className="p-5">
+                <DeleteButton
+                  action={deleteClientAction}
+                  hiddenField={{ name: "clientId", value: client.id }}
+                  confirmMessage={`Delete the client relationship for ${contactDisplayName(client.contact)}? This can't be undone. The contact itself is kept.`}
+                  label="Delete client"
+                />
+              </div>
+            </Card>
+          ) : null}
         </div>
       </div>
     </div>

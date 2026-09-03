@@ -1,6 +1,7 @@
 import { requireSession } from "@/lib/auth/session";
 import { Card } from "@/components/ui/card";
 import { ContactForm } from "@/components/contacts/contact-form";
+import { createContactAction } from "@/lib/contacts/actions";
 
 export default async function NewContactPage() {
   await requireSession();
@@ -15,7 +16,7 @@ export default async function NewContactPage() {
       </div>
 
       <Card className="max-w-2xl p-6">
-        <ContactForm />
+        <ContactForm action={createContactAction} submitLabel="Save contact" pendingLabel="Saving…" />
       </Card>
     </div>
   );

@@ -74,6 +74,84 @@ export async function createContactAction(
   redirect(`/contacts/${contact.id}`);
 }
 
+export interface UpdateContactState {
+  error?: string;
+}
+
+export async function updateContactAction(
+  _prevState: UpdateContactState | undefined,
+  formData: FormData,
+): Promise<UpdateContactState> {
+  const session = await requireSession();
+
+  const contactId = formData.get("contactId");
+  if (typeof contactId !== "string" || !contactId) {
+    return { error: "Missing contact." };
+  }
+
+  const parsed = createContactSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Check the form and try again." };
+  }
+
+  // Ownership check via the where clause itself, not a separate lookup —
+  // updateMany matching zero rows (wrong id, or someone else's contact)
+  // is indistinguishable from "not found" and handled identically.
+  const result = await prisma.contact.updateMany({
+    where: { id: contactId, ownerId: session.user.id },
+    data: parsed.data,
+  });
+  if (result.count === 0) {
+    return { error: "That contact could not be found." };
+  }
+
+  revalidatePath("/contacts");
+  revalidatePath(`/contacts/${contactId}`);
+  redirect(`/contacts/${contactId}`);
+}
+
+/**
+ * Deleting a Contact cascades (at the database level — see
+ * onDelete: Cascade in schema.prisma) into its Client row if one exists,
+ * which itself cascades into that Client's Transactions and everything
+ * hanging off them. That's real, often irreplaceable business data, so a
+ * contact that has ever been converted to a client can never be deleted
+ * through this action — the person has to be reachable some other way
+ * (e.g. deactivating the Client) instead of losing transaction history to
+ * an accidental click.
+ */
+export interface DeleteContactState {
+  error?: string;
+}
+
+export async function deleteContactAction(
+  _prevState: DeleteContactState | undefined,
+  formData: FormData,
+): Promise<DeleteContactState> {
+  const session = await requireSession();
+
+  const contactId = formData.get("contactId");
+  if (typeof contactId !== "string" || !contactId) {
+    return { error: "Missing contact." };
+  }
+
+  const contact = await prisma.contact.findFirst({
+    where: { id: contactId, ownerId: session.user.id },
+    select: { id: true, client: { select: { id: true } } },
+  });
+  if (!contact) {
+    return { error: "That contact could not be found." };
+  }
+  if (contact.client) {
+    return { error: "This contact is a client and can't be deleted. Deactivate the client instead." };
+  }
+
+  await prisma.contact.delete({ where: { id: contact.id } });
+
+  revalidatePath("/contacts");
+  redirect("/contacts");
+}
+
 const CLIENT_TYPES = ["BUYER", "SELLER", "BUYER_AND_SELLER", "OTHER"] as const;
 
 /**
