@@ -63,3 +63,21 @@ export function getShowingById(userId: string, id: string) {
     include: showingInclude,
   });
 }
+
+/** Contact/Client option lists for the edit form's "who is this for" pickers — same shape as listTaskFormOptions, so an unmatched (webhook-imported) showing can be linked to someone after the fact. */
+export async function listShowingFormOptions(userId: string) {
+  const [contacts, clients] = await Promise.all([
+    prisma.contact.findMany({
+      where: { ownerId: userId },
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: { lastName: "asc" },
+    }),
+    prisma.client.findMany({
+      where: { ownerId: userId },
+      select: { id: true, contact: { select: { firstName: true, lastName: true } } },
+      orderBy: { contact: { lastName: "asc" } },
+    }),
+  ]);
+
+  return { contacts, clients };
+}

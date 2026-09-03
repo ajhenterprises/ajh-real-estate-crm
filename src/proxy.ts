@@ -17,8 +17,8 @@ export default auth((req) => {
     req.nextUrl.pathname === "/setup" ||
     req.nextUrl.pathname.startsWith("/api/auth") ||
     // Inbound webhook from Postmark (no session cookie) — self-secured with
-    // its own HTTP Basic Auth check, see src/app/api/leads/zillow-email/route.ts.
-    req.nextUrl.pathname === "/api/leads/zillow-email";
+    // its own HTTP Basic Auth check, see src/app/api/leads/inbound-email/route.ts.
+    req.nextUrl.pathname === "/api/leads/inbound-email";
 
   if (!isLoggedIn && !isPublicPath) {
     const loginUrl = new URL("/login", req.nextUrl.origin);

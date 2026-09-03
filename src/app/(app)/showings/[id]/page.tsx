@@ -18,8 +18,8 @@ export default async function ShowingDetailPage(props: PageProps<"/showings/[id]
     ? contactDisplayName(showing.client.contact)
     : showing.contact
       ? contactDisplayName(showing.contact)
-      : "Unknown";
-  const whoHref = showing.client ? `/clients/${showing.client.id}` : `/contacts/${showing.contact?.id}`;
+      : null;
+  const whoHref = showing.client ? `/clients/${showing.client.id}` : showing.contact ? `/contacts/${showing.contact.id}` : undefined;
 
   return (
     <div className="flex flex-col gap-6">

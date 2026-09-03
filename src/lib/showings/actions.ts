@@ -30,6 +30,8 @@ const createShowingSchema = z.object({
 const updateShowingSchema = z.object({
   showingId: z.string().min(1),
   status: z.enum(SHOWING_STATUSES),
+  contactId: optionalString,
+  clientId: optionalString,
   ...showingFieldsSchema,
 });
 
@@ -38,16 +40,23 @@ export interface ShowingFormState {
 }
 
 /**
- * Verifies contactId/clientId (if provided) belong to this user and that at
- * least one is present — a showing always has to answer "who is this for,"
- * same rule stated in the schema comment on the Showing model itself.
+ * Verifies contactId/clientId (if provided) belong to this user.
+ * `requireAtLeastOne` is true for creation — a showing always has to
+ * answer "who is this for" when the agent is the one adding it (same rule
+ * stated in the schema comment on the Showing model itself) — but false
+ * for editing an existing showing, since the one legitimate way to reach
+ * both-null is a ShowingTime import that couldn't confidently match a
+ * name, and the edit form is exactly how the agent links it afterward; the
+ * record already exists, so nothing is lost by letting them save other
+ * changes (address, time) before they've picked who it's for.
  */
 async function resolveShowingSubject(
   userId: string,
   contactId: string | undefined,
   clientId: string | undefined,
+  requireAtLeastOne: boolean,
 ): Promise<{ contactId: string | null; clientId: string | null } | { error: string }> {
-  if (!contactId && !clientId) {
+  if (requireAtLeastOne && !contactId && !clientId) {
     return { error: "A showing needs a contact or client." };
   }
   if (contactId) {
@@ -74,7 +83,7 @@ export async function createShowingAction(
   }
 
   const { contactId, clientId, propertyAddress, scheduledAt, notes } = parsed.data;
-  const subject = await resolveShowingSubject(session.user.id, contactId, clientId);
+  const subject = await resolveShowingSubject(session.user.id, contactId, clientId, true);
   if ("error" in subject) return subject;
 
   await prisma.showing.create({
@@ -107,16 +116,26 @@ export async function updateShowingAction(
     return { error: parsed.error.issues[0]?.message ?? "Check the form and try again." };
   }
 
-  const { showingId, status, propertyAddress, scheduledAt, notes } = parsed.data;
+  const { showingId, status, contactId, clientId, propertyAddress, scheduledAt, notes } = parsed.data;
 
   const existing = await prisma.showing.findFirst({ where: { id: showingId, ownerId: session.user.id } });
   if (!existing) {
     return { error: "That showing could not be found." };
   }
 
+  const subject = await resolveShowingSubject(session.user.id, contactId, clientId, false);
+  if ("error" in subject) return subject;
+
   await prisma.showing.update({
     where: { id: existing.id },
-    data: { propertyAddress, scheduledAt: parseDateTimeInputValue(scheduledAt)!, notes, status },
+    data: {
+      propertyAddress,
+      scheduledAt: parseDateTimeInputValue(scheduledAt)!,
+      notes,
+      status,
+      contactId: subject.contactId,
+      clientId: subject.clientId,
+    },
   });
 
   revalidatePath("/showings");
@@ -125,6 +144,8 @@ export async function updateShowingAction(
   revalidatePath("/");
   if (existing.contactId) revalidatePath(`/contacts/${existing.contactId}`);
   if (existing.clientId) revalidatePath(`/clients/${existing.clientId}`);
+  if (subject.contactId) revalidatePath(`/contacts/${subject.contactId}`);
+  if (subject.clientId) revalidatePath(`/clients/${subject.clientId}`);
   redirect(`/showings/${existing.id}`);
 }
 

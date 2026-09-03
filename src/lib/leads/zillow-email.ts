@@ -10,7 +10,7 @@
  * of this writing. Zillow can and does change its templates without
  * notice — if real leads stop parsing, the fix is almost always widening
  * the label list below, not a redesign. See ZillowLeadEmail's ingestion
- * route (src/app/api/leads/zillow-email/route.ts) for what happens to an
+ * route (src/app/api/leads/inbound-email/route.ts) for what happens to an
  * email that fails to parse: it's never silently turned into a garbage
  * Contact.
  */

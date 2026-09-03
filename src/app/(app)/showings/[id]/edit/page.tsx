@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { getShowingById } from "@/lib/repos/showings";
+import { getShowingById, listShowingFormOptions } from "@/lib/repos/showings";
 import { updateShowingAction } from "@/lib/showings/actions";
 import { Card } from "@/components/ui/card";
 import { ShowingForm } from "@/components/showings/showing-form";
@@ -11,7 +11,10 @@ export default async function EditShowingPage(props: PageProps<"/showings/[id]/e
   const session = await requireSession();
   const { id } = await props.params;
 
-  const showing = await getShowingById(session.user.id, id);
+  const [showing, options] = await Promise.all([
+    getShowingById(session.user.id, id),
+    listShowingFormOptions(session.user.id),
+  ]);
   if (!showing) notFound();
 
   return (
@@ -30,11 +33,14 @@ export default async function EditShowingPage(props: PageProps<"/showings/[id]/e
         <ShowingForm
           action={updateShowingAction}
           showingId={showing.id}
+          options={options}
           defaultValues={{
             propertyAddress: showing.propertyAddress,
             scheduledAt: toDateTimeInputValue(showing.scheduledAt),
             status: showing.status,
             notes: showing.notes ?? undefined,
+            contactId: showing.contactId ?? undefined,
+            clientId: showing.clientId ?? undefined,
           }}
         />
       </Card>

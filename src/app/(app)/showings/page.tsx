@@ -90,8 +90,12 @@ export default async function ShowingsPage(props: PageProps<"/showings">) {
                 ? contactDisplayName(showing.client.contact)
                 : showing.contact
                   ? contactDisplayName(showing.contact)
-                  : "Unknown";
-              const whoHref = showing.client ? `/clients/${showing.client.id}` : `/contacts/${showing.contact?.id}`;
+                  : "Unassigned";
+              const whoHref = showing.client
+                ? `/clients/${showing.client.id}`
+                : showing.contact
+                  ? `/contacts/${showing.contact.id}`
+                  : `/showings/${showing.id}/edit`;
 
               return (
                 <div key={showing.id} className="flex items-center justify-between gap-4 px-5 py-3">
@@ -112,7 +116,7 @@ export default async function ShowingsPage(props: PageProps<"/showings">) {
                       href={whoHref}
                       className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
                     >
-                      {showing.client ? "View Client" : "View Contact"}
+                      {showing.client ? "View Client" : showing.contact ? "View Contact" : "Assign"}
                     </Link>
                     {showing.status === "SCHEDULED" ? (
                       <>

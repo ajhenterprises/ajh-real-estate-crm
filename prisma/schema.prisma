@@ -225,15 +225,28 @@ enum ShowingStatus {
 // A scheduled property showing — forward-looking (appears on the Calendar
 // and the Showings tab), distinct from ContactActivityType.SHOWING, which
 // just logs that a showing already happened. Tied to a Contact and/or a
-// Client (never neither — enforced in src/lib/showings/actions.ts, not the
-// database, same convention as Task's optional relations) so it always
-// answers "who is this showing for."
+// Client when created manually (never neither — enforced in
+// src/lib/showings/actions.ts's createShowingAction, not the database,
+// same convention as Task's optional relations) so it always answers "who
+// is this showing for." The one exception is a ShowingTime-email import
+// (source "showingtime_email") that couldn't confidently match a buyer
+// name to an existing Contact/Client — both stay null rather than guess
+// wrong, and the showing appears in the CRM unassigned so the agent can
+// link it from the edit page instead of it being silently dropped.
 model Showing {
   id              String        @id @default(cuid())
   propertyAddress String
   scheduledAt     DateTime
   status          ShowingStatus @default(SCHEDULED)
   notes           String?
+  // "manual" (the agent, or another agent-facing flow) | "showingtime_email"
+  // (see src/lib/leads/showingtime-email.ts) — same free-string provenance
+  // convention as Task.source/TransactionEvent.source.
+  source          String        @default("manual")
+  // Postmark MessageID for a webhook-imported showing — dedupes a retried
+  // delivery, same role Contact.sourceContactId plays for Zillow leads.
+  // Null for anything created through the app's own UI.
+  externalId      String?       @unique
 
   contactId String?
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
