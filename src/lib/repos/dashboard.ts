@@ -29,6 +29,7 @@ export async function getDashboardSummary(userId: string) {
     upcomingDeadlinesCount,
     activeClientsCount,
     overdueTasksCount,
+    totalContactsCount,
   ] = await Promise.all([
     prisma.transaction.count({
       where: {
@@ -56,6 +57,7 @@ export async function getDashboardSummary(userId: string) {
     prisma.task.count({
       where: { assignedUserId: userId, status: "PENDING", dueDate: { lt: startOfToday } },
     }),
+    prisma.contact.count({ where: { ownerId: userId } }),
   ]);
 
   return {
@@ -64,6 +66,7 @@ export async function getDashboardSummary(userId: string) {
     upcomingDeadlinesCount,
     activeClientsCount,
     overdueTasksCount,
+    totalContactsCount,
   };
 }
 

@@ -105,7 +105,8 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        <StatTile label="Total contacts" value={summary.totalContactsCount} />
         <StatTile label="Active clients" value={summary.activeClientsCount} />
         <StatTile label="Active transactions" value={summary.activeTransactionsCount} />
         <StatTile label="Tasks due today" value={summary.tasksDueTodayCount} />

@@ -80,6 +80,43 @@ export function buildExpenseCsv(expenses: ExpenseExportRow[]): string {
   return [header, ...rows].join("\r\n");
 }
 
+export interface TaxSummaryInput {
+  taxYear: number;
+  totalAmount: string;
+  totalByStatus: Record<DeductibilityStatus, string>;
+  categoryBreakdown: { categoryName: string; totalAmount: string; count: number }[];
+  totalMiles: string;
+}
+
+/**
+ * The "hand this to my CPA" export — compiled totals for one tax year, not
+ * a row per expense (that's what buildExpenseCsv/buildMileageCsv are for).
+ * Same reasoning as this file's header comment: CSV only, no XLSX/PDF
+ * generation exists anywhere in this codebase.
+ */
+export function buildTaxSummaryCsv(input: TaxSummaryInput): string {
+  const lines: string[] = [];
+  lines.push(toCsvRow(["AJH Real Estate CRM — Tax Summary", String(input.taxYear)]));
+  lines.push("");
+
+  lines.push(toCsvRow(["Category", "Count", "Total"]));
+  for (const row of input.categoryBreakdown) {
+    lines.push(toCsvRow([row.categoryName, row.count, row.totalAmount]));
+  }
+  lines.push("");
+
+  lines.push(toCsvRow(["Status", "Total"]));
+  lines.push(toCsvRow([DEDUCTIBILITY_STATUS_LABELS.DEDUCTIBLE, input.totalByStatus.DEDUCTIBLE]));
+  lines.push(toCsvRow([DEDUCTIBILITY_STATUS_LABELS.NEEDS_REVIEW, input.totalByStatus.NEEDS_REVIEW]));
+  lines.push(toCsvRow([DEDUCTIBILITY_STATUS_LABELS.NOT_DEDUCTIBLE, input.totalByStatus.NOT_DEDUCTIBLE]));
+  lines.push("");
+
+  lines.push(toCsvRow(["Total Expenses", input.totalAmount]));
+  lines.push(toCsvRow(["Total Business Miles", input.totalMiles]));
+
+  return lines.join("\r\n");
+}
+
 export interface MileageExportRow extends AssociationLike {
   date: Date;
   startLocation: string;

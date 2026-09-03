@@ -6,10 +6,11 @@ export const primaryNavItems = [
   { href: "/tasks", label: "Tasks" },
   { href: "/documents", label: "Documents" },
   { href: "/tax-expenses", label: "Tax & Expenses" },
+  { href: "/reports", label: "Reports" },
   { href: "/integrations", label: "Integrations" },
   { href: "/settings", label: "Settings" },
 ] as const;
 
 // Named on the roadmap but not yet built — shown de-emphasized rather than
 // silently omitted, so the shape of the product stays visible.
-export const upcomingNavItems = [{ label: "Calendar" }, { label: "Reports" }] as const;
+export const upcomingNavItems = [{ label: "Calendar" }] as const;
