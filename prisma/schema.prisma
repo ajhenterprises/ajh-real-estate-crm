@@ -1164,3 +1164,24 @@ model MileageRecord {
   @@index([contactId])
   @@map("mileage_records")
 }
+
+// ---------------------------------------------------------------------------
+// Brand settings — CRM-wide, not per-user
+// ---------------------------------------------------------------------------
+
+// Singleton row (id is always the literal string "default", enforced only by
+// convention in src/lib/settings/brand.ts — every read/write targets that
+// one id). Branding is a property of the CRM/brokerage as a whole, not of
+// any one signed-in user, so this deliberately has no ownerId, unlike every
+// other model in this schema.
+model BrandSettings {
+  id              String   @id @default("default")
+  companyName     String?
+  logoStoragePath String?
+  logoMimeType    String?
+  primaryColor    String   @default("#1c3a5e")
+  accentColor     String   @default("#2f6fed")
+  updatedAt       DateTime @updatedAt
+
+  @@map("brand_settings")
+}
