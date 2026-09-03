@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/auth/session";
 import { getCalendarMonthItems, type CalendarItem } from "@/lib/repos/calendar";
 import { Card } from "@/components/ui/card";
 import { TASK_PRIORITY_LABELS, TRANSACTION_EVENT_TYPE_LABELS } from "@/lib/labels";
+import { formatTime } from "@/lib/format";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTH_LABELS = [
@@ -62,12 +63,17 @@ function dayKeyUTC(date: Date): string {
 }
 
 function itemHref(item: CalendarItem): string {
-  return item.kind === "task" ? `/tasks/${item.id}` : `/transactions/${item.transactionId}`;
+  if (item.kind === "task") return `/tasks/${item.id}`;
+  if (item.kind === "showing") return `/showings/${item.id}`;
+  return `/transactions/${item.transactionId}`;
 }
 
 function itemLabel(item: CalendarItem): string {
   if (item.kind === "task") {
     return `${item.title}${item.priority === "URGENT" || item.priority === "HIGH" ? ` (${TASK_PRIORITY_LABELS[item.priority as keyof typeof TASK_PRIORITY_LABELS]})` : ""}`;
+  }
+  if (item.kind === "showing") {
+    return `${formatTime(item.date)} — ${item.title}`;
   }
   return item.propertyAddress ? `${TRANSACTION_EVENT_TYPE_LABELS[item.eventType as keyof typeof TRANSACTION_EVENT_TYPE_LABELS]} — ${item.propertyAddress}` : item.title;
 }
@@ -158,7 +164,9 @@ export default async function CalendarPage(props: PageProps<"/calendar">) {
                       className={`block truncate rounded px-1.5 py-0.5 text-xs font-medium hover:opacity-80 ${
                         item.kind === "task"
                           ? "bg-status-upcoming-bg text-status-upcoming"
-                          : "bg-status-attention-bg text-status-attention"
+                          : item.kind === "showing"
+                            ? "bg-status-ontrack-bg text-status-ontrack"
+                            : "bg-status-attention-bg text-status-attention"
                       }`}
                     >
                       {itemLabel(item)}
@@ -180,6 +188,9 @@ export default async function CalendarPage(props: PageProps<"/calendar">) {
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-status-attention" /> Transaction deadline
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-status-ontrack" /> Showing
         </span>
       </p>
     </div>

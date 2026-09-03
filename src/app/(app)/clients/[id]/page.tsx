@@ -6,7 +6,8 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DeleteButton } from "@/components/ui/delete-button";
 import { deleteClientAction } from "@/lib/clients/actions";
-import { contactDisplayName, formatDate, formatDateWithYear } from "@/lib/format";
+import { AddShowingForm } from "@/components/showings/add-showing-form";
+import { contactDisplayName, formatDate, formatDateTimeWithYear, formatDateWithYear } from "@/lib/format";
 import { CLIENT_STATUS_LABELS, CLIENT_TYPE_LABELS, TRANSACTION_STATUS_LABELS } from "@/lib/labels";
 
 export default async function ClientDetailPage(props: PageProps<"/clients/[id]">) {
@@ -215,6 +216,31 @@ export default async function ClientDetailPage(props: PageProps<"/clients/[id]">
                 ))}
               </div>
             )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Showings" />
+            {client.showings.length === 0 ? (
+              <div className="p-5">
+                <EmptyState title="No showings scheduled" description="Schedule one below." />
+              </div>
+            ) : (
+              <div className="flex flex-col divide-y divide-border">
+                {client.showings.map((showing) => (
+                  <Link
+                    key={showing.id}
+                    href={`/showings/${showing.id}`}
+                    className="block px-5 py-3 hover:bg-surface-muted"
+                  >
+                    <p className="text-sm font-medium text-foreground">{showing.propertyAddress}</p>
+                    <p className="text-sm text-muted-foreground">{formatDateTimeWithYear(showing.scheduledAt)}</p>
+                  </Link>
+                ))}
+              </div>
+            )}
+            <div className="border-t border-border">
+              <AddShowingForm clientId={client.id} />
+            </div>
           </Card>
 
           {client.transactions.length === 0 && previousTransactions.length === 0 ? (

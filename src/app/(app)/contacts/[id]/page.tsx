@@ -10,7 +10,8 @@ import { DeleteButton } from "@/components/ui/delete-button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { FollowUpForm } from "@/components/contacts/follow-up-form";
 import { LogActivityForm } from "@/components/contacts/log-activity-form";
-import { contactDisplayName, formatDateWithYear, toDateInputValue } from "@/lib/format";
+import { AddShowingForm } from "@/components/showings/add-showing-form";
+import { contactDisplayName, formatDateTimeWithYear, formatDateWithYear, toDateInputValue } from "@/lib/format";
 import { CONTACT_TYPE_LABELS, CLIENT_TYPE_LABELS, TRANSACTION_STATUS_LABELS, CONTACT_ACTIVITY_TYPE_LABELS } from "@/lib/labels";
 import { CONTACT_SOURCE_LABELS } from "@/lib/integrations/providers";
 import { deriveFollowUpStatus } from "@/lib/status";
@@ -109,6 +110,31 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
                 ))}
               </div>
             )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Showings" />
+            {contact.showings.length === 0 ? (
+              <div className="p-5">
+                <EmptyState title="No showings scheduled" description="Schedule one below." />
+              </div>
+            ) : (
+              <div className="flex flex-col divide-y divide-border">
+                {contact.showings.map((showing) => (
+                  <Link
+                    key={showing.id}
+                    href={`/showings/${showing.id}`}
+                    className="block px-5 py-3 hover:bg-surface-muted"
+                  >
+                    <p className="text-sm font-medium text-foreground">{showing.propertyAddress}</p>
+                    <p className="text-sm text-muted-foreground">{formatDateTimeWithYear(showing.scheduledAt)}</p>
+                  </Link>
+                ))}
+              </div>
+            )}
+            <div className="border-t border-border">
+              <AddShowingForm contactId={contact.id} />
+            </div>
           </Card>
 
           <Card>

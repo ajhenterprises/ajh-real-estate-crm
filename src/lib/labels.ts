@@ -8,6 +8,7 @@ import type {
   DocumentStatus,
   DocumentType,
   PaymentMethod,
+  ShowingStatus,
   TaskPriority,
   TaskStatus,
   TransactionEventType,
@@ -76,6 +77,12 @@ export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
 
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   PENDING: "Pending",
+  COMPLETED: "Completed",
+  CANCELLED: "Cancelled",
+};
+
+export const SHOWING_STATUS_LABELS: Record<ShowingStatus, string> = {
+  SCHEDULED: "Scheduled",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };

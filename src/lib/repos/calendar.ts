@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
+import { contactDisplayName } from "@/lib/format";
 
 // Every query here is scoped to the current session user, same convention
 // as every other repo in this codebase.
@@ -23,7 +24,15 @@ export interface CalendarDeadlineItem {
   propertyAddress: string | null;
 }
 
-export type CalendarItem = CalendarTaskItem | CalendarDeadlineItem;
+export interface CalendarShowingItem {
+  kind: "showing";
+  id: string;
+  title: string;
+  date: Date;
+  who: string;
+}
+
+export type CalendarItem = CalendarTaskItem | CalendarDeadlineItem | CalendarShowingItem;
 
 /** UTC month boundaries for `year`/`month` (1-12) — same UTC-calendar-day convention as src/lib/format.ts. */
 export function monthBoundsUTC(year: number, month: number): { start: Date; end: Date } {
@@ -48,7 +57,7 @@ export async function getCalendarMonthItems(
 ): Promise<Map<string, CalendarItem[]>> {
   const { start, end } = monthBoundsUTC(year, month);
 
-  const [tasks, events] = await Promise.all([
+  const [tasks, events, showings] = await Promise.all([
     db.task.findMany({
       where: {
         assignedUserId: userId,
@@ -70,6 +79,20 @@ export async function getCalendarMonthItems(
         eventType: true,
         transactionId: true,
         transaction: { select: { propertyAddress: true } },
+      },
+    }),
+    db.showing.findMany({
+      where: {
+        ownerId: userId,
+        status: "SCHEDULED",
+        scheduledAt: { gte: start, lt: end },
+      },
+      select: {
+        id: true,
+        propertyAddress: true,
+        scheduledAt: true,
+        contact: { select: { firstName: true, lastName: true } },
+        client: { select: { contact: { select: { firstName: true, lastName: true } } } },
       },
     }),
   ]);
@@ -102,6 +125,27 @@ export async function getCalendarMonthItems(
       transactionId: event.transactionId,
       propertyAddress: event.transaction.propertyAddress,
     });
+  }
+  for (const showing of showings) {
+    const who = showing.client
+      ? contactDisplayName(showing.client.contact)
+      : showing.contact
+        ? contactDisplayName(showing.contact)
+        : "Showing";
+    push(dayKeyUTC(showing.scheduledAt), {
+      kind: "showing",
+      id: showing.id,
+      title: `${showing.propertyAddress} — ${who}`,
+      date: showing.scheduledAt,
+      who,
+    });
+  }
+
+  // Within a day, order by time so a showing at a specific hour sorts
+  // relative to other timed items rather than always trailing after
+  // tasks/deadlines (which are date-only, i.e. UTC midnight).
+  for (const items of byDay.values()) {
+    items.sort((a, b) => a.date.getTime() - b.date.getTime());
   }
 
   return byDay;

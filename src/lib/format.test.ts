@@ -1,5 +1,12 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { contactDisplayName, endOfTodayUTC, formatCurrency, startOfTodayUTC } from "@/lib/format";
+import {
+  contactDisplayName,
+  endOfTodayUTC,
+  formatCurrency,
+  parseDateTimeInputValue,
+  startOfTodayUTC,
+  toDateTimeInputValue,
+} from "@/lib/format";
 
 describe("formatCurrency", () => {
   it("formats a numeric string as USD with no decimals", () => {
@@ -73,6 +80,37 @@ describe("startOfTodayUTC / endOfTodayUTC — independent of the process's local
     // a local-time boundary would incorrectly consider this "the 16th."
     const lateUtcEvening = new Date("2026-09-15T22:00:00.000Z");
     expect(startOfTodayUTC(lateUtcEvening).toISOString()).toBe("2026-09-15T00:00:00.000Z");
+  });
+});
+
+describe("toDateTimeInputValue / parseDateTimeInputValue", () => {
+  it("round-trips a datetime-local value exactly", () => {
+    expect(toDateTimeInputValue(parseDateTimeInputValue("2026-09-10T14:30")!)).toBe("2026-09-10T14:30");
+  });
+
+  it("returns undefined for a null/undefined date", () => {
+    expect(toDateTimeInputValue(null)).toBeUndefined();
+    expect(toDateTimeInputValue(undefined)).toBeUndefined();
+  });
+
+  it("returns null for an unparseable value", () => {
+    expect(parseDateTimeInputValue("not a date")).toBeNull();
+  });
+
+  it("parses the wall-clock time as UTC regardless of the process's local timezone", () => {
+    const originalTz = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      // If this were parsed via `new Date(value)` (no timezone in the
+      // string), Node would interpret "14:30" as 14:30 in the process's
+      // local timezone — shifting the stored instant by the zone offset.
+      // parseDateTimeInputValue must produce the same UTC instant no
+      // matter what TZ the server happens to run in.
+      expect(parseDateTimeInputValue("2026-09-10T14:30")!.toISOString()).toBe("2026-09-10T14:30:00.000Z");
+    } finally {
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
+    }
   });
 });
 

@@ -15,6 +15,23 @@ const dateWithYearFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   timeZone: "UTC",
 });
+// Showings are the one thing in this app with a meaningful time-of-day —
+// stored the same UTC-anchored-wall-clock way as every other date here (see
+// parseDateTimeInputValue below), so this must format with timeZone: "UTC"
+// too, for the same reason as every formatter above.
+const dateTimeWithYearFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "UTC",
+});
+const timeFormatter = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "UTC",
+});
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -36,6 +53,14 @@ export function formatDate(date: Date): string {
 
 export function formatDateWithYear(date: Date): string {
   return dateWithYearFormatter.format(date);
+}
+
+export function formatDateTimeWithYear(date: Date): string {
+  return dateTimeWithYearFormatter.format(date);
+}
+
+export function formatTime(date: Date): string {
+  return timeFormatter.format(date);
 }
 
 export function formatCurrency(value: number | string | null | undefined): string | null {
@@ -88,4 +113,31 @@ export function endOfTodayUTC(now: Date = new Date()): Date {
   const end = startOfTodayUTC(now);
   end.setUTCDate(end.getUTCDate() + 1);
   return end;
+}
+
+/** Formats a Date as the value a `<input type="datetime-local">` expects (YYYY-MM-DDTHH:mm), reading UTC — the datetime counterpart of toDateInputValue. */
+export function toDateTimeInputValue(date: Date | null | undefined): string | undefined {
+  if (!date) return undefined;
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const hour = String(date.getUTCHours()).padStart(2, "0");
+  const minute = String(date.getUTCMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hour}:${minute}`;
+}
+
+/**
+ * Parses a `<input type="datetime-local">` value ("YYYY-MM-DDTHH:mm") into
+ * a Date, treating the entered wall-clock time as UTC — same convention as
+ * every other date in this app (see the module comment above), extended to
+ * include time-of-day. Deliberately NOT `new Date(value)`: that string form
+ * has no timezone offset, so JS parses it in the *server's* local timezone,
+ * which would silently shift a showing's time depending on where the app
+ * happens to run. Returns null for anything that doesn't match the shape.
+ */
+export function parseDateTimeInputValue(value: string): Date | null {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!match) return null;
+  const [, year, month, day, hour, minute] = match;
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute)));
 }

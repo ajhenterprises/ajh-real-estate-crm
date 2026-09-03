@@ -92,6 +92,11 @@ export function getContactById(userId: string, contactId: string, db: Prisma.Tra
         orderBy: { dueDate: "asc" },
         take: 10,
       },
+      showings: {
+        where: { status: "SCHEDULED" },
+        orderBy: { scheduledAt: "asc" },
+        take: 10,
+      },
       activities: {
         orderBy: { createdAt: "desc" },
         take: 20,

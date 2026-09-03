@@ -77,6 +77,10 @@ export function getClientById(userId: string, clientId: string) {
         where: { status: "PENDING" },
         orderBy: { dueDate: "asc" },
       },
+      showings: {
+        where: { status: "SCHEDULED" },
+        orderBy: { scheduledAt: "asc" },
+      },
     },
   });
 }
