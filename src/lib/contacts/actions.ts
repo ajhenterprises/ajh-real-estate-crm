@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
 import { createContactActivity, ensureClientForContact, setContactFollowUpDate } from "@/lib/contacts/mutations";
 import { blankStringToUndefined, CONTACT_ACTIVITY_DEFAULT_DESCRIPTIONS } from "@/lib/contacts/activity";
+import { combineDateAndTimeUTC } from "@/lib/format";
 
 const CONTACT_TYPES = ["LEAD", "CLIENT", "PAST_CLIENT", "VENDOR", "OTHER"] as const;
 const CONTACT_SOURCES = [
@@ -205,18 +206,19 @@ export async function convertToClientAction(formData: FormData) {
   redirect(`/clients/${client.id}`);
 }
 
-const optionalDate = z.preprocess(
+const optionalDateOnly = z.preprocess(
   emptyToUndefined,
-  z
-    .string()
-    .refine((value) => !Number.isNaN(Date.parse(value)), "Enter a valid date")
-    .transform((value) => new Date(value))
-    .optional(),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid date").optional(),
+);
+const optionalTimeOnly = z.preprocess(
+  emptyToUndefined,
+  z.string().regex(/^\d{2}:\d{2}$/, "Enter a valid time").optional(),
 );
 
 const setFollowUpSchema = z.object({
   contactId: z.string().min(1),
-  nextFollowUpDate: optionalDate,
+  nextFollowUpDate: optionalDateOnly,
+  nextFollowUpTime: optionalTimeOnly,
 });
 
 export interface ContactFollowUpState {
@@ -241,9 +243,10 @@ export async function setContactFollowUpDateAction(
     return { error: parsed.error.issues[0]?.message ?? "Enter a valid date." };
   }
 
-  const { contactId, nextFollowUpDate } = parsed.data;
+  const { contactId, nextFollowUpDate, nextFollowUpTime } = parsed.data;
+  const combinedDate = nextFollowUpDate ? combineDateAndTimeUTC(nextFollowUpDate, nextFollowUpTime) : null;
 
-  const updated = await setContactFollowUpDate(session.user.id, contactId, nextFollowUpDate ?? null);
+  const updated = await setContactFollowUpDate(session.user.id, contactId, combinedDate);
   if (!updated) {
     return { error: "That contact could not be found." };
   }

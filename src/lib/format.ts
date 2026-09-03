@@ -55,6 +55,19 @@ export function formatDateWithYear(date: Date): string {
   return dateWithYearFormatter.format(date);
 }
 
+/** True when a Date carries a meaningful time-of-day rather than being a plain UTC-midnight calendar day — the signal a field like Contact.nextFollowUpDate uses to tell "no time set" (still just a date) from "a specific time was set." */
+export function hasTimeComponent(date: Date): boolean {
+  return date.getUTCHours() !== 0 || date.getUTCMinutes() !== 0;
+}
+
+export function formatDateWithOptionalTime(date: Date): string {
+  return hasTimeComponent(date) ? formatDateTimeWithYear(date) : formatDate(date);
+}
+
+export function formatDateWithYearAndOptionalTime(date: Date): string {
+  return hasTimeComponent(date) ? formatDateTimeWithYear(date) : formatDateWithYear(date);
+}
+
 export function formatDateTimeWithYear(date: Date): string {
   return dateTimeWithYearFormatter.format(date);
 }
@@ -140,4 +153,34 @@ export function parseDateTimeInputValue(value: string): Date | null {
   if (!match) return null;
   const [, year, month, day, hour, minute] = match;
   return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute)));
+}
+
+/** Formats a Date as the value a `<input type="time">` expects (HH:mm), reading UTC — undefined when the date has no meaningful time-of-day (see hasTimeComponent), so an optional time input starts blank rather than showing a misleading "12:00 AM". */
+export function toTimeInputValue(date: Date | null | undefined): string | undefined {
+  if (!date || !hasTimeComponent(date)) return undefined;
+  const hour = String(date.getUTCHours()).padStart(2, "0");
+  const minute = String(date.getUTCMinutes()).padStart(2, "0");
+  return `${hour}:${minute}`;
+}
+
+/**
+ * Combines a `<input type="date">` value with an optional `<input
+ * type="time">` value into one UTC-anchored-wall-clock Date — for a field
+ * like Contact.nextFollowUpDate where the date is required but the time is
+ * an optional add-on, rather than Showing's single required datetime-local.
+ * No time (or an unparseable one) means UTC midnight, exactly what a
+ * date-only value has always stored — so a follow-up set without a time
+ * behaves identically to before this field could carry one. Returns null
+ * for an unparseable date, same as parseDateTimeInputValue's null case.
+ */
+export function combineDateAndTimeUTC(dateValue: string, timeValue?: string | null): Date | null {
+  const dateMatch = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!dateMatch) return null;
+  const [, year, month, day] = dateMatch;
+
+  const timeMatch = timeValue?.match(/^(\d{2}):(\d{2})/);
+  const hour = timeMatch ? Number(timeMatch[1]) : 0;
+  const minute = timeMatch ? Number(timeMatch[2]) : 0;
+
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), hour, minute));
 }

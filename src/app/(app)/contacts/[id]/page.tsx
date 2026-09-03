@@ -11,7 +11,13 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { FollowUpForm } from "@/components/contacts/follow-up-form";
 import { LogActivityForm } from "@/components/contacts/log-activity-form";
 import { AddShowingForm } from "@/components/showings/add-showing-form";
-import { contactDisplayName, formatDateTimeWithYear, formatDateWithYear, toDateInputValue } from "@/lib/format";
+import {
+  contactDisplayName,
+  formatDateTimeWithYear,
+  formatDateWithYear,
+  toDateInputValue,
+  toTimeInputValue,
+} from "@/lib/format";
 import { CONTACT_TYPE_LABELS, CLIENT_TYPE_LABELS, TRANSACTION_STATUS_LABELS, CONTACT_ACTIVITY_TYPE_LABELS } from "@/lib/labels";
 import { CONTACT_SOURCE_LABELS } from "@/lib/integrations/providers";
 import { deriveFollowUpStatus } from "@/lib/status";
@@ -174,6 +180,7 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
               <FollowUpForm
                 contactId={contact.id}
                 defaultDate={toDateInputValue(contact.nextFollowUpDate)}
+                defaultTime={toTimeInputValue(contact.nextFollowUpDate)}
                 hasFollowUpDate={contact.nextFollowUpDate !== null}
               />
             </div>

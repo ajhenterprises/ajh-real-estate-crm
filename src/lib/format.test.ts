@@ -1,11 +1,16 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  combineDateAndTimeUTC,
   contactDisplayName,
   endOfTodayUTC,
   formatCurrency,
+  formatDateWithOptionalTime,
+  formatDateWithYearAndOptionalTime,
+  hasTimeComponent,
   parseDateTimeInputValue,
   startOfTodayUTC,
   toDateTimeInputValue,
+  toTimeInputValue,
 } from "@/lib/format";
 
 describe("formatCurrency", () => {
@@ -111,6 +116,43 @@ describe("toDateTimeInputValue / parseDateTimeInputValue", () => {
       if (originalTz === undefined) delete process.env.TZ;
       else process.env.TZ = originalTz;
     }
+  });
+});
+
+describe("combineDateAndTimeUTC / hasTimeComponent — the Follow-Up date+optional-time convention", () => {
+  it("defaults to UTC midnight when no time is given, matching a plain date-only value", () => {
+    const date = combineDateAndTimeUTC("2026-09-10")!;
+    expect(date.toISOString()).toBe("2026-09-10T00:00:00.000Z");
+    expect(hasTimeComponent(date)).toBe(false);
+  });
+
+  it("carries the given time as UTC wall-clock", () => {
+    const date = combineDateAndTimeUTC("2026-09-10", "14:30")!;
+    expect(date.toISOString()).toBe("2026-09-10T14:30:00.000Z");
+    expect(hasTimeComponent(date)).toBe(true);
+  });
+
+  it("returns null for an invalid date", () => {
+    expect(combineDateAndTimeUTC("not-a-date")).toBeNull();
+  });
+
+  it("toTimeInputValue is undefined for a midnight (no-time) date, and round-trips a real time", () => {
+    const noTime = combineDateAndTimeUTC("2026-09-10")!;
+    expect(toTimeInputValue(noTime)).toBeUndefined();
+
+    const withTime = combineDateAndTimeUTC("2026-09-10", "14:30")!;
+    expect(toTimeInputValue(withTime)).toBe("14:30");
+  });
+
+  it("formatDateWithOptionalTime / formatDateWithYearAndOptionalTime only show a time when one is set", () => {
+    const noTime = combineDateAndTimeUTC("2026-09-10")!;
+    const withTime = combineDateAndTimeUTC("2026-09-10", "14:30")!;
+
+    expect(formatDateWithOptionalTime(noTime)).toBe("September 10");
+    expect(formatDateWithOptionalTime(withTime)).toContain("2:30");
+
+    expect(formatDateWithYearAndOptionalTime(noTime)).toBe("Sep 10, 2026");
+    expect(formatDateWithYearAndOptionalTime(withTime)).toContain("2:30");
   });
 });
 

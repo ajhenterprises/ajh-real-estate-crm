@@ -7,10 +7,12 @@ import { Field, FormError, SubmitButton, TextInput } from "@/components/ui/form"
 export function FollowUpForm({
   contactId,
   defaultDate,
+  defaultTime,
   hasFollowUpDate,
 }: {
   contactId: string;
   defaultDate?: string;
+  defaultTime?: string;
   hasFollowUpDate: boolean;
 }) {
   const [state, formAction, pending] = useActionState(setContactFollowUpDateAction, undefined);
@@ -23,6 +25,11 @@ export function FollowUpForm({
         <div className="flex-1">
           <Field label="Next follow-up" htmlFor="nextFollowUpDate">
             <TextInput id="nextFollowUpDate" name="nextFollowUpDate" type="date" defaultValue={defaultDate} />
+          </Field>
+        </div>
+        <div className="w-32">
+          <Field label="Time" htmlFor="nextFollowUpTime">
+            <TextInput id="nextFollowUpTime" name="nextFollowUpTime" type="time" defaultValue={defaultTime} />
           </Field>
         </div>
         <SubmitButton pending={pending} pendingLabel="Saving…">

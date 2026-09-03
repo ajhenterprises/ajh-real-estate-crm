@@ -16,7 +16,7 @@ import { Card, CardHeader, StatTile } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { completeTaskAction } from "@/lib/tasks/actions";
-import { contactDisplayName, formatCurrency, formatDate } from "@/lib/format";
+import { contactDisplayName, formatCurrency, formatDate, formatDateWithOptionalTime } from "@/lib/format";
 import { deriveDeadlineStatus, deriveFollowUpStatus } from "@/lib/status";
 import { CONTACT_TYPE_LABELS } from "@/lib/labels";
 import { Greeting } from "@/components/dashboard/greeting";
@@ -165,7 +165,7 @@ export default async function DashboardPage() {
                     <p className="text-sm font-medium text-foreground">{contactDisplayName(contact)}</p>
                     <p className="truncate text-sm text-muted-foreground">
                       {CONTACT_TYPE_LABELS[contact.contactType]} · Follow up{" "}
-                      {contact.nextFollowUpDate ? formatDate(contact.nextFollowUpDate) : ""}
+                      {contact.nextFollowUpDate ? formatDateWithOptionalTime(contact.nextFollowUpDate) : ""}
                     </p>
                   </div>
                   <StatusBadge

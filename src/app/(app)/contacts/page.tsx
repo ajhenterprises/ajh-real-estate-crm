@@ -4,7 +4,7 @@ import { listContacts, type ContactFollowUpFilter, type ContactSort } from "@/li
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Select, TextInput } from "@/components/ui/form";
-import { contactDisplayName, formatDateWithYear } from "@/lib/format";
+import { contactDisplayName, formatDateWithYearAndOptionalTime } from "@/lib/format";
 import { CONTACT_TYPE_LABELS } from "@/lib/labels";
 import { CONTACT_SOURCE_LABELS } from "@/lib/integrations/providers";
 import { deriveFollowUpStatus } from "@/lib/status";
@@ -131,7 +131,7 @@ export default async function ContactsPage(props: PageProps<"/contacts">) {
                             : "text-muted-foreground"
                         }`}
                       >
-                        Follow up {formatDateWithYear(contact.nextFollowUpDate)}
+                        Follow up {formatDateWithYearAndOptionalTime(contact.nextFollowUpDate)}
                       </span>
                     ) : null}
                   </div>
