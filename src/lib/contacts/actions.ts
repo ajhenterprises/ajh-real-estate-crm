@@ -5,8 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
-import { Prisma } from "@/generated/prisma/client";
-import { createContactActivity, setContactFollowUpDate } from "@/lib/contacts/mutations";
+import { createContactActivity, ensureClientForContact, setContactFollowUpDate } from "@/lib/contacts/mutations";
 import { blankStringToUndefined, CONTACT_ACTIVITY_DEFAULT_DESCRIPTIONS } from "@/lib/contacts/activity";
 
 const CONTACT_TYPES = ["LEAD", "CLIENT", "PAST_CLIENT", "VENDOR", "OTHER"] as const;
@@ -70,6 +69,14 @@ export async function createContactAction(
     },
   });
 
+  if (parsed.data.contactType === "CLIENT") {
+    const { created } = await ensureClientForContact(session.user.id, contact.id);
+    if (created) {
+      await createContactActivity(session.user.id, contact.id, "STATUS_CHANGED", "Converted to client");
+      revalidatePath("/clients");
+    }
+  }
+
   revalidatePath("/contacts");
   redirect(`/contacts/${contact.id}`);
 }
@@ -103,6 +110,14 @@ export async function updateContactAction(
   });
   if (result.count === 0) {
     return { error: "That contact could not be found." };
+  }
+
+  if (parsed.data.contactType === "CLIENT") {
+    const { created } = await ensureClientForContact(session.user.id, contactId);
+    if (created) {
+      await createContactActivity(session.user.id, contactId, "STATUS_CHANGED", "Converted to client");
+      revalidatePath("/clients");
+    }
   }
 
   revalidatePath("/contacts");
@@ -180,37 +195,14 @@ export async function convertToClientAction(formData: FormData) {
     redirect(`/clients/${contact.client.id}`);
   }
 
-  let clientId: string;
-  try {
-    const client = await prisma.client.create({
-      data: { contactId: contact.id, ownerId: session.user.id, type: typeParsed.data },
-    });
-    clientId = client.id;
-  } catch (error) {
-    // Unique constraint on Client.contactId — someone else converted this
-    // contact between our check and our create. Not an error: converge on
-    // the client that now exists rather than surfacing a failure.
-    const isDuplicate =
-      error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
-    if (!isDuplicate) throw error;
-
-    const existing = await prisma.client.findUnique({ where: { contactId: contact.id } });
-    if (!existing) throw error;
-    clientId = existing.id;
+  const { client, created } = await ensureClientForContact(session.user.id, contact.id, typeParsed.data);
+  if (created) {
+    await createContactActivity(session.user.id, contact.id, "STATUS_CHANGED", "Converted to client");
   }
-
-  await prisma.contactActivity.create({
-    data: {
-      contactId: contact.id,
-      type: "STATUS_CHANGED",
-      description: "Converted to client",
-      source: "MANUAL",
-    },
-  });
 
   revalidatePath(`/contacts/${contact.id}`);
   revalidatePath("/clients");
-  redirect(`/clients/${clientId}`);
+  redirect(`/clients/${client.id}`);
 }
 
 const optionalDate = z.preprocess(
