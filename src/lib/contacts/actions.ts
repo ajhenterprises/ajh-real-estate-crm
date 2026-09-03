@@ -17,6 +17,8 @@ const CONTACT_SOURCES = [
   "BULLSEYE",
   "WEBSITE",
   "FACEBOOK",
+  "ZILLOW",
+  "REALTOR_COM",
   "REFERRAL",
   "OTHER",
 ] as const;

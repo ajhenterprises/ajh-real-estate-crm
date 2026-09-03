@@ -13,6 +13,8 @@ export const CONTACT_SOURCE_LABELS: Record<ContactSource, string> = {
   BULLSEYE: "Bullseye",
   WEBSITE: "Website",
   FACEBOOK: "Facebook",
+  ZILLOW: "Zillow",
+  REALTOR_COM: "Realtor.com",
   REFERRAL: "Referral",
   OTHER: "Other",
 };
