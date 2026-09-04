@@ -10,6 +10,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { FollowUpForm } from "@/components/contacts/follow-up-form";
 import { LogActivityForm } from "@/components/contacts/log-activity-form";
 import { AddShowingForm } from "@/components/showings/add-showing-form";
+import { cancelShowingAction, completeShowingAction } from "@/lib/showings/actions";
 import {
   contactDisplayName,
   formatDate,
@@ -42,6 +43,7 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
   const lastContacted = getLastContactedActivity(contact.activities);
   const isClient = CLIENT_CONTACT_TYPES.includes(contact.contactType);
   const canDelete = contact.transactions.length === 0 && closedTransactions.length === 0;
+  const nextShowing = contact.showings[0] ?? null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -70,6 +72,9 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
                 variant="attention"
                 label={followUpStatus === "overdue" ? "Follow-up overdue" : "Follow up today"}
               />
+            ) : null}
+            {nextShowing ? (
+              <StatusBadge variant="upcoming" label={`Showing ${formatDateTimeWithYear(nextShowing.scheduledAt)}`} />
             ) : null}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -118,6 +123,49 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
                 <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{contact.notes}</p>
               </div>
             ) : null}
+          </Card>
+
+          <Card>
+            <CardHeader title="Showings" action={<Link href="/showings" className="text-sm font-medium text-accent">View all</Link>} />
+            {contact.showings.length === 0 ? (
+              <div className="p-5">
+                <EmptyState title="No showings scheduled" description="Schedule one below." />
+              </div>
+            ) : (
+              <div className="flex flex-col divide-y divide-border">
+                {contact.showings.map((showing) => (
+                  <div key={showing.id} className="flex items-center justify-between gap-4 px-5 py-3">
+                    <Link href={`/showings/${showing.id}`} className="min-w-0 flex-1 hover:opacity-80">
+                      <p className="truncate text-sm font-medium text-foreground">{showing.propertyAddress}</p>
+                      <p className="text-sm text-muted-foreground">{formatDateTimeWithYear(showing.scheduledAt)}</p>
+                    </Link>
+                    <div className="flex shrink-0 gap-2">
+                      <form action={completeShowingAction}>
+                        <input type="hidden" name="showingId" value={showing.id} />
+                        <button
+                          type="submit"
+                          className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
+                        >
+                          Complete
+                        </button>
+                      </form>
+                      <form action={cancelShowingAction}>
+                        <input type="hidden" name="showingId" value={showing.id} />
+                        <button
+                          type="submit"
+                          className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
+                        >
+                          Cancel
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="border-t border-border">
+              <AddShowingForm contactId={contact.id} />
+            </div>
           </Card>
 
           <Card>
@@ -253,31 +301,6 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
                 ))}
               </div>
             )}
-          </Card>
-
-          <Card>
-            <CardHeader title="Showings" />
-            {contact.showings.length === 0 ? (
-              <div className="p-5">
-                <EmptyState title="No showings scheduled" description="Schedule one below." />
-              </div>
-            ) : (
-              <div className="flex flex-col divide-y divide-border">
-                {contact.showings.map((showing) => (
-                  <Link
-                    key={showing.id}
-                    href={`/showings/${showing.id}`}
-                    className="block px-5 py-3 hover:bg-surface-muted"
-                  >
-                    <p className="text-sm font-medium text-foreground">{showing.propertyAddress}</p>
-                    <p className="text-sm text-muted-foreground">{formatDateTimeWithYear(showing.scheduledAt)}</p>
-                  </Link>
-                ))}
-              </div>
-            )}
-            <div className="border-t border-border">
-              <AddShowingForm contactId={contact.id} />
-            </div>
           </Card>
 
           {canDelete ? (
