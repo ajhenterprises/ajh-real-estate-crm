@@ -149,6 +149,47 @@ export async function updateExpense(
   return { outcome: "updated" };
 }
 
+export type DuplicateExpenseResult =
+  | { outcome: "duplicated"; expenseId: string }
+  | { outcome: "not-found" };
+
+/**
+ * Copies every field of an existing expense into a brand-new row with a
+ * caller-supplied date — the original is never touched. Deliberately does
+ * NOT copy receipts/documents: a duplicated expense is a new, separate
+ * purchase (e.g. this month's software subscription), so it shouldn't
+ * inherit last month's receipt file.
+ */
+export async function duplicateExpense(
+  userId: string,
+  expenseId: string,
+  newDate: Date,
+  db: Prisma.TransactionClient = prisma,
+): Promise<DuplicateExpenseResult> {
+  const existing = await db.expense.findFirst({ where: { id: expenseId, ownerId: userId } });
+  if (!existing) return { outcome: "not-found" };
+
+  const created = await db.expense.create({
+    data: {
+      ownerId: userId,
+      expenseDate: newDate,
+      taxYear: deriveTaxYear(newDate),
+      amount: existing.amount,
+      vendor: existing.vendor,
+      categoryId: existing.categoryId,
+      businessPurpose: existing.businessPurpose,
+      paymentMethod: existing.paymentMethod,
+      deductibleStatus: existing.deductibleStatus,
+      businessUsePercent: existing.businessUsePercent,
+      notes: existing.notes,
+      transactionId: existing.transactionId,
+      contactId: existing.contactId,
+    },
+  });
+
+  return { outcome: "duplicated", expenseId: created.id };
+}
+
 export type DeleteExpenseResult = { outcome: "deleted" } | { outcome: "not-found" };
 
 /**

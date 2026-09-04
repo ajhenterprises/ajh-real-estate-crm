@@ -11,6 +11,7 @@ import {
   createMileageRecord,
   deleteExpense,
   deleteMileageRecord,
+  duplicateExpense,
   removeExpenseReceipt,
   updateExpense,
   updateMileageRecord,
@@ -152,6 +153,71 @@ describe.skipIf(!hasTestDatabase)("tax-expenses mutations (integration)", () => 
       expect(result).toEqual({ outcome: "not-found" });
       const row = await getTestDb().expense.findUnique({ where: { id: created.expenseId } });
       expect(row?.vendor).toBe("Acme Software");
+    });
+  });
+
+  describe("duplicateExpense", () => {
+    it("copies every field onto a new row with the given date, leaving the original untouched", async () => {
+      const owner = await createTestUser();
+      const contact = await createTestContact(owner.id);
+      const created = await createExpense(
+        owner.id,
+        baseExpenseInput({ businessPurpose: "CRM subscription", notes: "Monthly", contactId: contact.id }),
+        getTestDb(),
+      );
+      if (created.outcome !== "created") throw new Error("setup failed");
+
+      const result = await duplicateExpense(owner.id, created.expenseId, new Date("2026-04-15T00:00:00.000Z"), getTestDb());
+
+      expect(result.outcome).toBe("duplicated");
+      if (result.outcome !== "duplicated") throw new Error("expected duplicated");
+      expect(result.expenseId).not.toBe(created.expenseId);
+
+      const duplicate = await getTestDb().expense.findUnique({ where: { id: result.expenseId } });
+      expect(duplicate?.expenseDate.toISOString().slice(0, 10)).toBe("2026-04-15");
+      expect(duplicate?.taxYear).toBe(2026);
+      expect(duplicate?.vendor).toBe("Acme Software");
+      expect(duplicate?.amount.toString()).toBe("79.99");
+      expect(duplicate?.categoryId).toBe(OTHER_CATEGORY_ID);
+      expect(duplicate?.businessPurpose).toBe("CRM subscription");
+      expect(duplicate?.notes).toBe("Monthly");
+      expect(duplicate?.contactId).toBe(contact.id);
+
+      // Original is unchanged.
+      const original = await getTestDb().expense.findUnique({ where: { id: created.expenseId } });
+      expect(original?.expenseDate.toISOString().slice(0, 10)).toBe("2026-03-15");
+    });
+
+    it("does not copy receipts onto the duplicate", async () => {
+      const owner = await createTestUser();
+      const created = await createExpense(owner.id, baseExpenseInput(), getTestDb());
+      if (created.outcome !== "created") throw new Error("setup failed");
+      const attached = await attachExpenseReceipt(
+        owner.id,
+        created.expenseId,
+        fakeFile("receipt.pdf", "application/pdf", "receipt bytes"),
+        getTestDb(),
+        storage,
+      );
+      if (attached.outcome !== "attached") throw new Error("setup failed");
+
+      const result = await duplicateExpense(owner.id, created.expenseId, new Date("2026-04-15T00:00:00.000Z"), getTestDb());
+
+      expect(result.outcome).toBe("duplicated");
+      if (result.outcome !== "duplicated") throw new Error("expected duplicated");
+      const documents = await getTestDb().document.findMany({ where: { expenseId: result.expenseId } });
+      expect(documents).toHaveLength(0);
+    });
+
+    it("rejects duplicating another user's expense", async () => {
+      const owner = await createTestUser();
+      const otherUser = await createTestUser();
+      const created = await createExpense(owner.id, baseExpenseInput(), getTestDb());
+      if (created.outcome !== "created") throw new Error("setup failed");
+
+      const result = await duplicateExpense(otherUser.id, created.expenseId, new Date("2026-04-15T00:00:00.000Z"), getTestDb());
+
+      expect(result).toEqual({ outcome: "not-found" });
     });
   });
 

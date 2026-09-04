@@ -2,36 +2,38 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 
 /**
- * The 20 default expense categories, shared by every user (ExpenseCategory
+ * The 21 default expense categories, shared by every user (ExpenseCategory
  * rows with ownerId null — see prisma/schema.prisma's ExpenseCategory
- * comment). This is the live, canonical list; the migration that first
- * created these rows (prisma/migrations/20260901180000_tax_expense_tracking)
- * is a historical SQL snapshot of the same data and won't automatically
- * stay in sync with edits here — changing this list does not change
- * existing database rows, the same way editing any other model's field
- * doesn't retroactively change data. Adding a new default category later
- * needs its own migration.
+ * comment). This is the live, canonical list; the migrations that created
+ * (20260901180000_tax_expense_tracking) and later cleaned up
+ * (20260904080000_expense_category_cleanup) these rows are historical SQL
+ * snapshots of this same data and won't automatically stay in sync with
+ * edits here — changing this list does not change existing database rows,
+ * the same way editing any other model's field doesn't retroactively
+ * change data. Adding a new default category later needs its own
+ * migration.
  */
 export const DEFAULT_EXPENSE_CATEGORIES: { id: string; name: string }[] = [
-  { id: "expcat_advertising_marketing", name: "Advertising & Marketing" },
-  { id: "expcat_mls_association", name: "MLS / Association" },
-  { id: "expcat_brokerage_fees", name: "Brokerage Fees" },
-  { id: "expcat_lead_generation", name: "Lead Generation" },
-  { id: "expcat_client_gifts", name: "Client Gifts" },
-  { id: "expcat_signs_printing", name: "Signs & Printing" },
-  { id: "expcat_photography_video", name: "Photography / Video" },
-  { id: "expcat_software_subscriptions", name: "Software & Subscriptions" },
-  { id: "expcat_office_supplies", name: "Office Supplies" },
+  { id: "expcat_advertising_marketing", name: "Marketing & Advertising" },
+  { id: "expcat_signs", name: "Signs" },
+  { id: "expcat_print_materials", name: "Business Cards / Print Materials" },
+  { id: "expcat_photography_video", name: "Photography / Videography" },
+  { id: "expcat_mls_listing_services", name: "MLS / Listing Services" },
+  { id: "expcat_association_dues", name: "Association / REALTOR® Dues" },
+  { id: "expcat_license_renewal", name: "License Renewal" },
+  { id: "expcat_continuing_education", name: "Continuing Education" },
+  { id: "expcat_brokerage_fees", name: "Brokerage Transfer / Change of Brokerage" },
+  { id: "expcat_office_supplies", name: "Office / Business Supplies" },
+  { id: "expcat_software_subscriptions", name: "Technology / Software" },
   { id: "expcat_phone_internet", name: "Phone / Internet" },
-  { id: "expcat_education_training", name: "Education & Training" },
-  { id: "expcat_professional_services", name: "Professional Services" },
-  { id: "expcat_insurance", name: "Insurance" },
+  { id: "expcat_vehicle_mileage", name: "Mileage / Vehicle" },
   { id: "expcat_travel", name: "Travel" },
   { id: "expcat_meals", name: "Meals" },
-  { id: "expcat_vehicle_mileage", name: "Vehicle / Mileage" },
-  { id: "expcat_postage_shipping", name: "Postage & Shipping" },
-  { id: "expcat_bank_fees", name: "Bank / Payment Processing Fees" },
-  { id: "expcat_home_office", name: "Home Office" },
+  { id: "expcat_client_gifts", name: "Client Gifts" },
+  { id: "expcat_professional_services", name: "Professional Services" },
+  { id: "expcat_insurance", name: "Insurance" },
+  { id: "expcat_legal_accounting", name: "Legal / Accounting" },
+  { id: "expcat_education_training", name: "Education / Training" },
   { id: "expcat_other", name: "Other" },
 ];
 

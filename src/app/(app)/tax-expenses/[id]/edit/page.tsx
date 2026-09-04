@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { getExpenseById } from "@/lib/repos/tax-expenses";
@@ -8,7 +9,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ExpenseForm } from "@/components/tax-expenses/expense-form";
 import { AttachReceiptForm } from "@/components/tax-expenses/attach-receipt-form";
-import { deleteExpenseAction, removeExpenseReceiptAction } from "@/lib/tax-expenses/actions";
+import { removeExpenseReceiptAction } from "@/lib/tax-expenses/actions";
 import { formatFileSize } from "@/lib/documents/validation";
 import { DOCUMENT_STATUS_LABELS } from "@/lib/labels";
 import { formatDateWithYear } from "@/lib/format";
@@ -29,18 +30,20 @@ export default async function EditExpensePage(props: PageProps<"/tax-expenses/[i
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Edit Expense</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{expense.vendor}</p>
+          <p className="text-sm text-muted-foreground">
+            <Link href={`/tax-expenses/${expense.id}`} className="hover:text-foreground">
+              {expense.vendor}
+            </Link>{" "}
+            / Edit
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold text-foreground">Edit Expense</h1>
         </div>
-        <form action={deleteExpenseAction}>
-          <input type="hidden" name="expenseId" value={expense.id} />
-          <button
-            type="submit"
-            className="rounded-md border border-border px-3 py-2 text-sm font-medium text-status-attention hover:bg-surface-muted"
-          >
-            Delete expense
-          </button>
-        </form>
+        <Link
+          href={`/tax-expenses/${expense.id}`}
+          className="rounded-md border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-surface-muted"
+        >
+          Cancel
+        </Link>
       </div>
 
       <Card>

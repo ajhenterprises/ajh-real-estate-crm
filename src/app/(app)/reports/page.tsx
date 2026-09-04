@@ -68,31 +68,40 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
       </div>
 
       <Card>
-        <CardHeader title={`Category breakdown — ${year}`} />
+        <CardHeader
+          title={`Category breakdown — ${year}`}
+          action={<span className="text-xs text-muted-foreground">Every category, incl. $0</span>}
+        />
         {summary.categoryBreakdown.length === 0 ? (
           <div className="p-5">
             <EmptyState title="No expenses yet" description={`No expenses recorded for ${year} yet.`} />
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <th className="px-5 py-2.5">Category</th>
-                  <th className="px-5 py-2.5">Count</th>
-                  <th className="px-5 py-2.5">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {summary.categoryBreakdown.map((row) => (
-                  <tr key={row.categoryId}>
-                    <td className="px-5 py-2.5 text-foreground">{row.categoryName}</td>
-                    <td className="px-5 py-2.5 text-muted-foreground">{row.count}</td>
-                    <td className="px-5 py-2.5 text-foreground">{formatCurrencyPrecise(row.totalAmount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="flex flex-col divide-y divide-border">
+            {summary.categoryBreakdown.map((row) => (
+              <div key={row.categoryId} className="flex items-center justify-between gap-4 px-5 py-3">
+                <p className={`min-w-0 truncate text-sm ${row.count > 0 ? "text-foreground" : "text-muted-foreground"}`}>
+                  {row.categoryName}
+                </p>
+                <div className="flex shrink-0 items-baseline gap-3 text-sm">
+                  <span className="text-muted-foreground">
+                    {row.count} {row.count === 1 ? "expense" : "expenses"}
+                  </span>
+                  <span className={`w-24 text-right font-medium ${row.count > 0 ? "text-foreground" : "text-muted-foreground"}`}>
+                    {formatCurrencyPrecise(row.totalAmount)}
+                  </span>
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center justify-between gap-4 bg-surface-muted px-5 py-3">
+              <p className="text-sm font-semibold text-foreground">Total — {year}</p>
+              <div className="flex shrink-0 items-baseline gap-3 text-sm">
+                <span className="text-muted-foreground">{summary.expenseCount} total</span>
+                <span className="w-24 text-right font-semibold text-foreground">
+                  {formatCurrencyPrecise(summary.totalAmount)}
+                </span>
+              </div>
+            </div>
           </div>
         )}
       </Card>

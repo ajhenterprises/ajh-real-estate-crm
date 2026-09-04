@@ -60,10 +60,17 @@ describe.skipIf(!hasTestDatabase)("tax-expenses repo (integration)", () => {
       expect(summary.totalByStatus.DEDUCTIBLE).toBe("100");
       expect(summary.totalByStatus.NEEDS_REVIEW).toBe("50");
       expect(summary.totalByStatus.NOT_DEDUCTIBLE).toBe("25");
-      expect(summary.categoryBreakdown).toHaveLength(2);
+      // Every available category appears — not just the two with activity
+      // this year — so the full category structure is always visible.
+      expect(summary.categoryBreakdown.length).toBeGreaterThan(2);
       const software = summary.categoryBreakdown.find((c) => c.categoryId === SOFTWARE_CATEGORY_ID);
       expect(software?.count).toBe(2);
       expect(software?.totalAmount).toBe("75");
+      const untouched = summary.categoryBreakdown.find(
+        (c) => c.categoryId !== OTHER_CATEGORY_ID && c.categoryId !== SOFTWARE_CATEGORY_ID,
+      );
+      expect(untouched?.count).toBe(0);
+      expect(untouched?.totalAmount).toBe("0");
     });
 
     it("never mixes another user's expenses into the total", async () => {
@@ -78,14 +85,15 @@ describe.skipIf(!hasTestDatabase)("tax-expenses repo (integration)", () => {
       expect(summary.expenseCount).toBe(1);
     });
 
-    it("returns all-zero totals for a year with no expenses", async () => {
+    it("returns all-zero totals for a year with no expenses, but still lists every available category", async () => {
       const owner = await createTestUser();
 
       const summary = await getExpenseYearSummary(owner.id, 2030, getTestDb());
 
       expect(summary.totalAmount).toBe("0");
       expect(summary.expenseCount).toBe(0);
-      expect(summary.categoryBreakdown).toEqual([]);
+      expect(summary.categoryBreakdown.length).toBeGreaterThan(0);
+      expect(summary.categoryBreakdown.every((c) => c.count === 0 && c.totalAmount === "0")).toBe(true);
     });
   });
 

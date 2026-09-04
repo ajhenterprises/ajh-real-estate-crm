@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
 import { isAllowedDocumentMimeType, MAX_DOCUMENT_SIZE_BYTES } from "@/lib/documents/validation";
 import { createExpenseSchema, createMileageSchema, type CreateExpenseInput, type CreateMileageInput } from "@/lib/tax-expenses/validation";
@@ -11,6 +12,7 @@ import {
   createMileageRecord,
   deleteExpense,
   deleteMileageRecord,
+  duplicateExpense,
   removeExpenseReceipt,
   updateExpense,
   updateMileageRecord,
@@ -96,6 +98,7 @@ export async function createExpenseAction(
   }
 
   revalidatePath("/tax-expenses");
+  revalidatePath("/reports");
   redirect(`/tax-expenses/${result.expenseId}/edit`);
 }
 
@@ -119,21 +122,73 @@ export async function updateExpenseAction(
   if (result.outcome === "invalid-category") return { error: "Choose a valid category." };
 
   revalidatePath("/tax-expenses");
+  revalidatePath(`/tax-expenses/${expenseId}`);
   revalidatePath(`/tax-expenses/${expenseId}/edit`);
-  return {};
+  revalidatePath("/reports");
+  redirect(`/tax-expenses/${expenseId}`);
 }
 
-/** Fire-and-forget, matching archiveDocumentAction's shape. Deleting an expense never touches its receipt's R2 object — see deleteExpense's own comment (src/lib/tax-expenses/mutations.ts). */
-export async function deleteExpenseAction(formData: FormData) {
+const duplicateExpenseSchema = z.object({
+  expenseId: z.string().min(1),
+  expenseDate: z
+    .string()
+    .refine((value) => !Number.isNaN(Date.parse(value)), "Enter a valid date")
+    .transform((value) => new Date(value)),
+});
+
+export interface DuplicateExpenseState {
+  error?: string;
+}
+
+/**
+ * Copies an existing expense onto a new date the agent picks on the
+ * duplicate-confirmation page — see duplicateExpense (mutations.ts) for
+ * what is and isn't copied. Never touches the original expense.
+ */
+export async function duplicateExpenseAction(
+  _prevState: DuplicateExpenseState | undefined,
+  formData: FormData,
+): Promise<DuplicateExpenseState> {
+  const session = await requireSession();
+
+  const parsed = duplicateExpenseSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Check the form and try again." };
+  }
+
+  const result = await duplicateExpense(session.user.id, parsed.data.expenseId, parsed.data.expenseDate);
+  if (result.outcome === "not-found") return { error: "That expense could not be found." };
+
+  revalidatePath("/tax-expenses");
+  revalidatePath("/reports");
+  redirect(`/tax-expenses/${result.expenseId}`);
+}
+
+export interface DeleteExpenseState {
+  error?: string;
+}
+
+/**
+ * useActionState-shaped (matching deleteContactAction) so the expense
+ * detail page can use the shared DeleteButton component — confirm dialog
+ * plus an error message if deletion is ever blocked. Deleting an expense
+ * never touches its receipt's R2 object — see deleteExpense's own comment
+ * (src/lib/tax-expenses/mutations.ts).
+ */
+export async function deleteExpenseAction(
+  _prevState: DeleteExpenseState | undefined,
+  formData: FormData,
+): Promise<DeleteExpenseState> {
   const session = await requireSession();
 
   const expenseId = formData.get("expenseId");
-  if (typeof expenseId !== "string") return;
+  if (typeof expenseId !== "string") return { error: "Missing expense." };
 
   const result = await deleteExpense(session.user.id, expenseId);
-  if (result.outcome !== "deleted") return;
+  if (result.outcome !== "deleted") return { error: "That expense could not be found." };
 
   revalidatePath("/tax-expenses");
+  revalidatePath("/reports");
   redirect("/tax-expenses");
 }
 

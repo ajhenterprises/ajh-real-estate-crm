@@ -5,6 +5,7 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import type { DeductibilityStatus } from "@/generated/prisma/enums";
+import { listCategoriesForUser } from "@/lib/tax-expenses/categories";
 
 // Every query here is scoped to `ownerId` for the current session user —
 // same convention as every other repo in this codebase.
@@ -141,16 +142,28 @@ export interface ExpenseYearSummary {
   categoryBreakdown: ExpenseCategoryBreakdown[];
 }
 
-/** Dashboard totals for one tax year: overall amount, per-status amounts (Deductible/Needs Review/Not Deductible — user-entered labels, never inferred here), and a per-category breakdown. */
+/**
+ * Dashboard totals for one tax year: overall amount, per-status amounts
+ * (Deductible/Needs Review/Not Deductible — user-entered labels, never
+ * inferred here), and a per-category breakdown.
+ *
+ * The breakdown always includes every category available to this user
+ * (every default plus their own custom ones) — not just categories with
+ * an expense this year — so the full category structure is visible even
+ * when most of it is $0 for the period being viewed; categories with
+ * activity sort first by total (highest first), unused ones follow
+ * alphabetically.
+ */
 export async function getExpenseYearSummary(
   userId: string,
   taxYear: number,
   db: Prisma.TransactionClient = prisma,
 ): Promise<ExpenseYearSummary> {
-  const [totalAgg, statusGroups, categoryGroups] = await Promise.all([
+  const [totalAgg, statusGroups, categoryGroups, allCategories] = await Promise.all([
     db.expense.aggregate({ where: { ownerId: userId, taxYear }, _sum: { amount: true }, _count: true }),
     db.expense.groupBy({ by: ["deductibleStatus"], where: { ownerId: userId, taxYear }, _sum: { amount: true } }),
     db.expense.groupBy({ by: ["categoryId"], where: { ownerId: userId, taxYear }, _sum: { amount: true }, _count: true }),
+    listCategoriesForUser(userId, db),
   ]);
 
   const totalByStatus: Record<DeductibilityStatus, string> = {
@@ -162,21 +175,25 @@ export async function getExpenseYearSummary(
     totalByStatus[group.deductibleStatus] = (group._sum.amount ?? 0).toString();
   }
 
-  const categoryIds = categoryGroups.map((group) => group.categoryId);
-  const categories = await db.expenseCategory.findMany({
-    where: { id: { in: categoryIds } },
-    select: { id: true, name: true },
-  });
-  const categoryNameById = new Map(categories.map((category) => [category.id, category.name]));
+  const activityByCategoryId = new Map(
+    categoryGroups.map((group) => [group.categoryId, { totalAmount: (group._sum.amount ?? 0).toString(), count: group._count }]),
+  );
 
-  const categoryBreakdown = categoryGroups
-    .map((group) => ({
-      categoryId: group.categoryId,
-      categoryName: categoryNameById.get(group.categoryId) ?? "Unknown",
-      totalAmount: (group._sum.amount ?? 0).toString(),
-      count: group._count,
-    }))
-    .sort((a, b) => Number(b.totalAmount) - Number(a.totalAmount));
+  const categoryBreakdown = allCategories
+    .map((category) => {
+      const activity = activityByCategoryId.get(category.id);
+      return {
+        categoryId: category.id,
+        categoryName: category.name,
+        totalAmount: activity?.totalAmount ?? "0",
+        count: activity?.count ?? 0,
+      };
+    })
+    .sort((a, b) => {
+      if (a.count > 0 && b.count > 0) return Number(b.totalAmount) - Number(a.totalAmount);
+      if (a.count !== b.count) return a.count > 0 ? -1 : 1;
+      return a.categoryName.localeCompare(b.categoryName);
+    });
 
   return {
     totalAmount: (totalAgg._sum.amount ?? 0).toString(),

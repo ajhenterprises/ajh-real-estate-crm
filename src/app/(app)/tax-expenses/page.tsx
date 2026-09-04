@@ -13,7 +13,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Select, TextInput } from "@/components/ui/form";
 import { formatCurrencyPrecise, formatDateWithYear } from "@/lib/format";
 import { DEDUCTIBILITY_STATUS_LABELS } from "@/lib/labels";
-import { deleteExpenseAction } from "@/lib/tax-expenses/actions";
 import type { DeductibilityStatus } from "@/generated/prisma/enums";
 
 const SORT_OPTIONS: { value: ExpenseSort; label: string }[] = [
@@ -90,7 +89,7 @@ export default async function TaxExpensesPage(props: PageProps<"/tax-expenses">)
         >
           View year
         </button>
-        <div className="ml-auto flex gap-2">
+        <div className="flex flex-wrap gap-2 sm:ml-auto">
           <a
             href={`/api/tax-expenses/export?type=expenses&taxYear=${year}`}
             className="rounded-md border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-surface-muted"
@@ -106,7 +105,7 @@ export default async function TaxExpensesPage(props: PageProps<"/tax-expenses">)
         </div>
       </form>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <StatTile label="Total expenses" value={formatCurrencyPrecise(summary.totalAmount) ?? "$0.00"} />
         <StatTile label="Deductible" value={formatCurrencyPrecise(summary.totalByStatus.DEDUCTIBLE) ?? "$0.00"} />
         <StatTile label="Needs review" value={formatCurrencyPrecise(summary.totalByStatus.NEEDS_REVIEW) ?? "$0.00"} />
@@ -116,31 +115,35 @@ export default async function TaxExpensesPage(props: PageProps<"/tax-expenses">)
       </div>
 
       <Card>
-        <CardHeader title={`Category breakdown — ${year}`} />
+        <CardHeader
+          title={`Category breakdown — ${year}`}
+          action={
+            <Link href="/reports" className="text-sm font-medium text-accent">
+              Full report
+            </Link>
+          }
+        />
         {summary.categoryBreakdown.length === 0 ? (
           <div className="p-5">
-            <EmptyState title="No expenses yet" description={`No expenses recorded for ${year} yet.`} />
+            <EmptyState title="No categories yet" description="Add an expense to see your category breakdown." />
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <th className="px-5 py-2.5">Category</th>
-                  <th className="px-5 py-2.5">Count</th>
-                  <th className="px-5 py-2.5">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {summary.categoryBreakdown.map((row) => (
-                  <tr key={row.categoryId}>
-                    <td className="px-5 py-2.5 text-foreground">{row.categoryName}</td>
-                    <td className="px-5 py-2.5 text-muted-foreground">{row.count}</td>
-                    <td className="px-5 py-2.5 text-foreground">{formatCurrencyPrecise(row.totalAmount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="flex flex-col divide-y divide-border">
+            {summary.categoryBreakdown.map((row) => (
+              <div key={row.categoryId} className="flex items-center justify-between gap-4 px-5 py-3">
+                <p className={`min-w-0 truncate text-sm ${row.count > 0 ? "text-foreground" : "text-muted-foreground"}`}>
+                  {row.categoryName}
+                </p>
+                <div className="flex shrink-0 items-baseline gap-3 text-sm">
+                  <span className="text-muted-foreground">
+                    {row.count} {row.count === 1 ? "expense" : "expenses"}
+                  </span>
+                  <span className={`w-24 text-right font-medium ${row.count > 0 ? "text-foreground" : "text-muted-foreground"}`}>
+                    {formatCurrencyPrecise(row.totalAmount)}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </Card>
@@ -196,70 +199,36 @@ export default async function TaxExpensesPage(props: PageProps<"/tax-expenses">)
             />
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <th className="px-5 py-2.5">Date</th>
-                  <th className="px-5 py-2.5">Vendor</th>
-                  <th className="px-5 py-2.5">Category</th>
-                  <th className="px-5 py-2.5">Amount</th>
-                  <th className="px-5 py-2.5">Status</th>
-                  <th className="px-5 py-2.5">Transaction</th>
-                  <th className="px-5 py-2.5">Receipt</th>
-                  <th className="px-5 py-2.5">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {expenses.map((expense) => {
-                  const associationLabel = expense.transaction
-                    ? expense.transaction.propertyAddress ?? "Transaction"
-                    : expense.contact
-                      ? `${expense.contact.firstName} ${expense.contact.lastName}`
-                      : "—";
-                  const activeReceipts = expense.documents.filter((doc) => doc.status !== "PENDING_DELETION");
+          <div className="flex flex-col divide-y divide-border">
+            {expenses.map((expense) => {
+              const associationLabel = expense.transaction
+                ? expense.transaction.propertyAddress ?? "Transaction"
+                : expense.contact
+                  ? `${expense.contact.firstName} ${expense.contact.lastName}`
+                  : null;
+              const activeReceipts = expense.documents.filter((doc) => doc.status !== "PENDING_DELETION");
 
-                  return (
-                    <tr key={expense.id}>
-                      <td className="px-5 py-2.5 whitespace-nowrap text-foreground">
-                        {formatDateWithYear(expense.expenseDate)}
-                      </td>
-                      <td className="px-5 py-2.5 text-foreground">{expense.vendor}</td>
-                      <td className="px-5 py-2.5 text-muted-foreground">{expense.category.name}</td>
-                      <td className="px-5 py-2.5 whitespace-nowrap text-foreground">
-                        {formatCurrencyPrecise(expense.amount.toString())}
-                      </td>
-                      <td className="px-5 py-2.5 text-muted-foreground">
-                        {DEDUCTIBILITY_STATUS_LABELS[expense.deductibleStatus]}
-                      </td>
-                      <td className="px-5 py-2.5 text-muted-foreground">{associationLabel}</td>
-                      <td className="px-5 py-2.5 text-muted-foreground">
-                        {activeReceipts.length > 0 ? `${activeReceipts.length} file(s)` : "—"}
-                      </td>
-                      <td className="px-5 py-2.5">
-                        <div className="flex flex-wrap gap-2">
-                          <Link
-                            href={`/tax-expenses/${expense.id}/edit`}
-                            className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
-                          >
-                            Edit
-                          </Link>
-                          <form action={deleteExpenseAction}>
-                            <input type="hidden" name="expenseId" value={expense.id} />
-                            <button
-                              type="submit"
-                              className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-status-attention hover:bg-surface-muted"
-                            >
-                              Delete
-                            </button>
-                          </form>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+              return (
+                <Link
+                  key={expense.id}
+                  href={`/tax-expenses/${expense.id}`}
+                  className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-surface-muted"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">{expense.vendor}</p>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {formatDateWithYear(expense.expenseDate)} · {expense.category.name} ·{" "}
+                      {DEDUCTIBILITY_STATUS_LABELS[expense.deductibleStatus]}
+                      {associationLabel ? ` · ${associationLabel}` : ""}
+                      {activeReceipts.length > 0 ? ` · ${activeReceipts.length} receipt(s)` : ""}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-sm font-medium text-foreground">
+                    {formatCurrencyPrecise(expense.amount.toString())}
+                  </span>
+                </Link>
+              );
+            })}
           </div>
         )}
       </Card>
