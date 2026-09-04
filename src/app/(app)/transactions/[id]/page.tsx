@@ -6,7 +6,11 @@ import { setTransactionEventStatusAction } from "@/lib/transactions/actions";
 import { cancelTaskAction, completeTaskAction, reopenTaskAction } from "@/lib/tasks/actions";
 import { archiveDocumentAction, deleteDocumentAction, restoreDocumentAction } from "@/lib/documents/actions";
 import { DOCUMENT_DELETION_RETENTION_DAYS } from "@/lib/documents/mutations";
-import { createContractInformationAction, extractContractInformationAction } from "@/lib/contracts/actions";
+import {
+  createContractInformationAction,
+  extractContractAmendmentAction,
+  extractContractInformationAction,
+} from "@/lib/contracts/actions";
 import { summarizeTaskProgress } from "@/lib/tasks/progress";
 import { deriveContractStatus, CONTRACT_STATUS_LABELS } from "@/lib/contracts/status";
 import { formatFileSize } from "@/lib/documents/validation";
@@ -384,6 +388,39 @@ export default async function TransactionDetailPage(props: PageProps<"/transacti
                               </button>
                             </form>
                           </>
+                        )
+                      ) : document.documentType === "ADDENDUM" ? (
+                        contract.current?.contractInformation ? (
+                          <>
+                            {document.mimeType === "application/pdf" ? (
+                              <form action={extractContractAmendmentAction}>
+                                <input type="hidden" name="transactionId" value={transaction.id} />
+                                <input type="hidden" name="documentId" value={document.id} />
+                                <input
+                                  type="hidden"
+                                  name="contractInformationId"
+                                  value={contract.current.contractInformation.id}
+                                />
+                                <button
+                                  type="submit"
+                                  className="rounded-md border border-accent px-2.5 py-1 text-xs font-medium text-accent hover:bg-surface-muted"
+                                  title="Reads the addendum's text for date changes and pre-fills them on the Contract Information edit form — no AI, and nothing updates the transaction's actual dates until you review and re-confirm."
+                                >
+                                  Extract Changes from Addendum
+                                </button>
+                              </form>
+                            ) : null}
+                            <Link
+                              href={`/transactions/${transaction.id}/contract-information/${contract.current.contractInformation.id}`}
+                              className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
+                            >
+                              View Contract Information
+                            </Link>
+                          </>
+                        ) : (
+                          <span className="px-2.5 py-1 text-xs text-muted-foreground">
+                            Enter Contract Information from the signed contract first
+                          </span>
                         )
                       ) : null}
                       {document.status === "PENDING_DELETION" ? (

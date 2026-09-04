@@ -52,10 +52,11 @@ const MONTH_NAMES: Record<string, number> = {
 const MONTH_NAME_PATTERN =
   "January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept|Sep|Oct|Nov|Dec";
 
-const DATE_PATTERN = String.raw`(\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2}|(?:${MONTH_NAME_PATTERN})\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4})`;
+/** Exported so parse-amendment.ts's wider-window date search matches the exact same three date shapes this module does. */
+export const DATE_PATTERN = String.raw`(\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2}|(?:${MONTH_NAME_PATTERN})\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4})`;
 
 /** Parses one of the three date shapes DATE_PATTERN matches into a UTC date-only Date, matching this app's UTC date-storage convention. */
-function parseFlexibleDate(raw: string): Date | null {
+export function parseFlexibleDate(raw: string): Date | null {
   const value = raw.trim();
 
   let match = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
@@ -102,13 +103,13 @@ function findMoney(flatText: string, labels: string[]): string | null {
   return null;
 }
 
-interface Period {
+export interface Period {
   days: number;
   dayType: ContractPeriodDayType;
 }
 
-/** Looks within ~120 chars after a label for "<N> [calendar|business] day(s)", e.g. "ten (10) calendar days" or "10 business days". */
-function findPeriod(flatText: string, labels: string[]): Period | null {
+/** Looks within ~120 chars after a label for "<N> [calendar|business] day(s)", e.g. "ten (10) calendar days" or "10 business days". Exported for reuse by parse-amendment.ts — an addendum's period-change phrasing ("the Inspection Period is extended to 15 days") fits this exact same window/pattern unchanged. */
+export function findPeriod(flatText: string, labels: string[]): Period | null {
   for (const label of labels) {
     const windowMatch = flatText.match(new RegExp(`${label}([\\s\\S]{0,120})`, "i"));
     if (!windowMatch) continue;
@@ -142,6 +143,28 @@ function splitAddress(address: string | null): { line: string | null; city: stri
   return { line: match[1].trim(), city: match[2].trim(), state: match[3], zip: match[4] };
 }
 
+// Exported so parse-amendment.ts's addendum extraction searches for exactly
+// the same field vocabulary the original-contract parser does — only the
+// date search's window width differs between the two.
+export const CONTRACT_EFFECTIVE_DATE_LABELS = [
+  "(?:Contract\\s+)?Effective\\s+Date(?:\\s+of\\s+(?:this\\s+)?Contract)?",
+  "Binding Agreement Date",
+];
+export const CLOSING_DATE_LABELS = ["Closing Date", "Date of Closing", "Settlement Date", "Scheduled Closing"];
+export const EARNEST_MONEY_DUE_DATE_LABELS = [
+  "Earnest Money(?:\\s+Deposit)?\\s+Due\\s+Date",
+  "Due Date (?:of|for) Earnest Money",
+];
+export const INSPECTION_PERIOD_LABELS = ["Inspection Period", "Due Diligence Period", "Right to Inspect"];
+export const FINANCING_PERIOD_LABELS = [
+  "Financing Contingency",
+  "Loan Approval Period",
+  "Financing Period",
+  "Mortgage Contingency",
+];
+export const APPRAISAL_PERIOD_LABELS = ["Appraisal Contingency", "Appraisal Period"];
+export const TITLE_PERIOD_LABELS = ["Title Objection Period", "Title Examination Period", "Title Period"];
+
 export function parseContractText(text: string): ParsedContractFields {
   const flatText = text.replace(/\s+/g, " ").trim();
   const lines = text
@@ -156,15 +179,10 @@ export function parseContractText(text: string): ParsedContractFields {
   ]);
   const address = splitAddress(rawAddress);
 
-  const inspection = findPeriod(flatText, ["Inspection Period", "Due Diligence Period", "Right to Inspect"]);
-  const financing = findPeriod(flatText, [
-    "Financing Contingency",
-    "Loan Approval Period",
-    "Financing Period",
-    "Mortgage Contingency",
-  ]);
-  const appraisal = findPeriod(flatText, ["Appraisal Contingency", "Appraisal Period"]);
-  const title = findPeriod(flatText, ["Title Objection Period", "Title Examination Period", "Title Period"]);
+  const inspection = findPeriod(flatText, INSPECTION_PERIOD_LABELS);
+  const financing = findPeriod(flatText, FINANCING_PERIOD_LABELS);
+  const appraisal = findPeriod(flatText, APPRAISAL_PERIOD_LABELS);
+  const title = findPeriod(flatText, TITLE_PERIOD_LABELS);
 
   return {
     buyerNames: findLineValue(lines, ["Buyer(?:'s)?\\s*Name(?:s)?", "Buyer(?:\\(s\\))?", "Purchaser(?:'s)?\\s*Name(?:s)?", "Purchaser(?:\\(s\\))?"]),
@@ -175,15 +193,9 @@ export function parseContractText(text: string): ParsedContractFields {
     propertyZip: address.zip,
     purchasePrice: findMoney(flatText, ["Total Purchase Price", "Purchase Price", "Sales Price", "Sale Price"]),
     earnestMoneyAmount: findMoney(flatText, ["Earnest Money(?:\\s+Deposit)?(?:\\s+Amount)?", "Initial Deposit", "EMD"]),
-    contractEffectiveDate: findDate(flatText, [
-      "(?:Contract\\s+)?Effective\\s+Date(?:\\s+of\\s+(?:this\\s+)?Contract)?",
-      "Binding Agreement Date",
-    ]),
-    expectedClosingDate: findDate(flatText, ["Closing Date", "Date of Closing", "Settlement Date", "Scheduled Closing"]),
-    earnestMoneyDueDate: findDate(flatText, [
-      "Earnest Money(?:\\s+Deposit)?\\s+Due\\s+Date",
-      "Due Date (?:of|for) Earnest Money",
-    ]),
+    contractEffectiveDate: findDate(flatText, CONTRACT_EFFECTIVE_DATE_LABELS),
+    expectedClosingDate: findDate(flatText, CLOSING_DATE_LABELS),
+    earnestMoneyDueDate: findDate(flatText, EARNEST_MONEY_DUE_DATE_LABELS),
     inspectionPeriodDays: inspection?.days ?? null,
     inspectionPeriodDayType: inspection?.dayType ?? null,
     financingPeriodDays: financing?.days ?? null,

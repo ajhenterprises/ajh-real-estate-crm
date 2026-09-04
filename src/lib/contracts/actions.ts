@@ -9,7 +9,10 @@ import { calculateContractEvents } from "@/lib/contracts/dates";
 import { isContractTaskEventType, reconcileContractDerivedTask } from "@/lib/contracts/task-sync";
 import { extractPdfText } from "@/lib/contracts/extract-pdf-text";
 import { parseContractText, type ParsedContractFields } from "@/lib/contracts/parse-fields";
+import { parseContractAmendmentText, type ParsedContractAmendment } from "@/lib/contracts/parse-amendment";
 import { getStorageAdapter } from "@/lib/storage";
+import { formatDateWithYear } from "@/lib/format";
+import type { ContractPeriodDayType } from "@/generated/prisma/enums";
 
 const emptyToUndefined = (value: unknown) => (value === "" ? undefined : value);
 
@@ -158,6 +161,127 @@ export async function extractContractInformationAction(formData: FormData) {
 
   revalidatePath(`/transactions/${transactionId}`);
   redirect(`/transactions/${transactionId}/contract-information/${created.id}/edit`);
+}
+
+function describePeriod(days: number | null, dayType: ContractPeriodDayType | null): string {
+  if (days === null) return "not set";
+  return `${days} ${dayType === "BUSINESS" ? "business" : "calendar"} day${days === 1 ? "" : "s"}`;
+}
+
+const AMENDABLE_DATE_FIELDS = ["contractEffectiveDate", "expectedClosingDate", "earnestMoneyDueDate"] as const;
+const AMENDABLE_DATE_LABELS: Record<(typeof AMENDABLE_DATE_FIELDS)[number], string> = {
+  contractEffectiveDate: "Contract effective date",
+  expectedClosingDate: "Closing date",
+  earnestMoneyDueDate: "Earnest money due date",
+};
+
+const AMENDABLE_PERIOD_FIELDS = ["inspection", "financing", "appraisal", "title"] as const;
+const AMENDABLE_PERIOD_LABELS: Record<(typeof AMENDABLE_PERIOD_FIELDS)[number], string> = {
+  inspection: "Inspection/due diligence period",
+  financing: "Financing period",
+  appraisal: "Appraisal period",
+  title: "Title period",
+};
+
+/**
+ * Reads an ADDENDUM document's text for date/period changes (see
+ * parse-amendment.ts — deterministic, no AI, same as the original-contract
+ * extraction) and applies only what it recognizes directly onto the
+ * transaction's existing ContractInformation draft, alongside a changelog
+ * entry appended to its notes recording exactly what changed and why (which
+ * addendum, old value -> new value) so the agent can see what this touched
+ * before acting on it.
+ *
+ * Deliberately does NOT re-confirm the record or touch TransactionEvents/
+ * Tasks itself — same human-in-the-loop boundary as the original contract
+ * flow: this only updates the draft. Nothing about the transaction's real
+ * dates changes until the agent reviews this draft on the edit form (where
+ * the changelog is visible in the Notes field) and explicitly re-confirms.
+ */
+export async function extractContractAmendmentAction(formData: FormData) {
+  const session = await requireSession();
+
+  const transactionId = formData.get("transactionId");
+  const documentId = formData.get("documentId");
+  const contractInformationId = formData.get("contractInformationId");
+  if (
+    typeof transactionId !== "string" ||
+    typeof documentId !== "string" ||
+    typeof contractInformationId !== "string"
+  ) {
+    return;
+  }
+
+  const document = await prisma.document.findFirst({
+    where: {
+      id: documentId,
+      transactionId,
+      documentType: "ADDENDUM",
+      transaction: { ownerId: session.user.id },
+    },
+  });
+  if (!document) return;
+
+  const info = await prisma.contractInformation.findFirst({
+    where: { id: contractInformationId, transactionId, ownerId: session.user.id },
+  });
+  if (!info) return;
+
+  let amendment: ParsedContractAmendment | null = null;
+  if (document.mimeType === "application/pdf") {
+    const body = await getStorageAdapter().get(document.storagePath);
+    const text = await extractPdfText(body);
+    if (text.trim().length > 0) amendment = parseContractAmendmentText(text);
+  }
+
+  const changeLines: string[] = [];
+  const updateData: Record<string, unknown> = {};
+
+  for (const field of AMENDABLE_DATE_FIELDS) {
+    const newValue = amendment?.[field] ?? null;
+    if (!newValue) continue;
+    const currentValue = info[field];
+    if (currentValue && currentValue.getTime() === newValue.getTime()) continue;
+
+    changeLines.push(
+      `${AMENDABLE_DATE_LABELS[field]}: ${currentValue ? formatDateWithYear(currentValue) : "not set"} → ${formatDateWithYear(newValue)}`,
+    );
+    updateData[field] = newValue;
+  }
+
+  for (const period of AMENDABLE_PERIOD_FIELDS) {
+    const daysField = `${period}PeriodDays` as const;
+    const dayTypeField = `${period}PeriodDayType` as const;
+    const newDays = amendment?.[daysField] ?? null;
+    if (newDays === null) continue;
+    const newDayType = amendment![dayTypeField];
+    const currentDays = info[daysField];
+    const currentDayType = info[dayTypeField];
+    if (currentDays === newDays && currentDayType === newDayType) continue;
+
+    changeLines.push(
+      `${AMENDABLE_PERIOD_LABELS[period]}: ${describePeriod(currentDays, currentDayType)} → ${describePeriod(newDays, newDayType)}`,
+    );
+    updateData[daysField] = newDays;
+    updateData[dayTypeField] = newDayType;
+  }
+
+  const changelog =
+    `[Addendum reviewed ${formatDateWithYear(new Date())} — "${document.filename}"]\n` +
+    (changeLines.length > 0
+      ? changeLines.join("\n")
+      : "No recognizable date changes found in this addendum's text — review it manually below.");
+
+  await prisma.contractInformation.update({
+    where: { id: info.id },
+    data: {
+      ...updateData,
+      notes: info.notes ? `${info.notes}\n\n${changelog}` : changelog,
+    },
+  });
+
+  revalidatePath(`/transactions/${transactionId}`);
+  redirect(`/transactions/${transactionId}/contract-information/${info.id}/edit`);
 }
 
 export async function updateContractInformationAction(
