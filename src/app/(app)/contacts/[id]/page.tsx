@@ -292,12 +292,16 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
             ) : (
               <div className="flex flex-col divide-y divide-border">
                 {contact.tasks.map((task) => (
-                  <div key={task.id} className="px-5 py-3">
+                  <Link
+                    key={task.id}
+                    href={`/tasks/${task.id}`}
+                    className="block px-5 py-3 hover:bg-surface-muted"
+                  >
                     <p className="text-sm font-medium text-foreground">{task.title}</p>
                     <p className="text-sm text-muted-foreground">
                       {task.dueDate ? `Due ${formatDateWithYear(task.dueDate)}` : "No due date"}
                     </p>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}
