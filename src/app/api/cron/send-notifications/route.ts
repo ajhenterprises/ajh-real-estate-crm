@@ -3,12 +3,18 @@ import { prisma } from "@/lib/db";
 import { sendPushToUser } from "@/lib/notifications/push";
 
 /**
- * The entire "background job" this app has: one periodic sweep (Vercel
- * Cron — see vercel.json, every 5 minutes) for ScheduledNotification rows
- * that are due, not a queue, not a long-running worker, and never
- * triggered by client-side polling. Deliberately simple: find what's due,
- * send it, mark it sent. A batch of a few dozen rows every 5 minutes is
- * nowhere near enough volume to need anything more than this.
+ * The entire "background job" this app has: one daily sweep (Vercel Cron —
+ * see vercel.json, 8:00 UTC) for ScheduledNotification rows that are due,
+ * not a queue, not a long-running worker, and never triggered by
+ * client-side polling. Deliberately simple: find what's due, send it, mark
+ * it sent. Once-daily is a Hobby-plan constraint (Vercel Cron on Hobby
+ * cannot run more than once per day per job) rather than a design choice:
+ * transaction-deadline reminders are scheduled for exactly this hour (see
+ * REMINDER_HOUR_UTC in scheduling.ts) so they still land on time, but a
+ * task/follow-up reminder configured for "N minutes before" can arrive up
+ * to a day late if it falls due later the same day. Upgrading to Vercel
+ * Pro would allow a tighter schedule (e.g. every 5-15 minutes) if that
+ * precision is ever worth the added cost.
  *
  * Protected by CRON_SECRET (Vercel sends it as this exact bearer header
  * for its own scheduled invocations — see
