@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import type { ContactActivityType } from "@/generated/prisma/enums";
+import { isContactTouchpointType, type ContactTouchpointType } from "@/lib/contacts/activity";
 
 /**
  * Owner-scoped Contact mutations, factored out of the "use server" actions
@@ -55,4 +56,36 @@ export async function createContactActivity(
   return db.contactActivity.create({
     data: { contactId: contact.id, type, description, source: "MANUAL" },
   });
+}
+
+/**
+ * Edits a logged activity's type/description. Only agent touchpoint types
+ * (see isContactTouchpointType) are editable — system bookkeeping entries
+ * (CREATED, STATUS_CHANGED, SYNCED, OTHER) are a permanent record and this
+ * refuses to touch them, returning null exactly like the not-owned/
+ * not-found case so the caller can't tell them apart.
+ */
+export async function updateContactActivity(
+  userId: string,
+  activityId: string,
+  type: ContactTouchpointType,
+  description: string,
+  db: Prisma.TransactionClient = prisma,
+) {
+  const activity = await db.contactActivity.findFirst({ where: { id: activityId, contact: { ownerId: userId } } });
+  if (!activity || !isContactTouchpointType(activity.type)) return null;
+
+  return db.contactActivity.update({ where: { id: activity.id }, data: { type, description } });
+}
+
+/** Same touchpoint-only restriction as updateContactActivity above. Returns the deleted row (its contactId is what callers need to revalidate) or null. */
+export async function deleteContactActivity(
+  userId: string,
+  activityId: string,
+  db: Prisma.TransactionClient = prisma,
+) {
+  const activity = await db.contactActivity.findFirst({ where: { id: activityId, contact: { ownerId: userId } } });
+  if (!activity || !isContactTouchpointType(activity.type)) return null;
+
+  return db.contactActivity.delete({ where: { id: activity.id } });
 }

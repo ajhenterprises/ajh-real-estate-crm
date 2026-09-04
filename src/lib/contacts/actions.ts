@@ -5,8 +5,17 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
-import { createContactActivity, setContactFollowUpDate } from "@/lib/contacts/mutations";
-import { blankStringToUndefined, CONTACT_ACTIVITY_DEFAULT_DESCRIPTIONS } from "@/lib/contacts/activity";
+import {
+  createContactActivity,
+  deleteContactActivity,
+  setContactFollowUpDate,
+  updateContactActivity,
+} from "@/lib/contacts/mutations";
+import {
+  blankStringToUndefined,
+  CONTACT_ACTIVITY_DEFAULT_DESCRIPTIONS,
+  CONTACT_TOUCHPOINT_ACTIVITY_TYPES,
+} from "@/lib/contacts/activity";
 import { combineDateAndTimeUTC } from "@/lib/format";
 import { CLIENT_CONTACT_TYPES } from "@/lib/labels";
 
@@ -225,7 +234,7 @@ export async function setContactFollowUpDateAction(
   return {};
 }
 
-const CONTACT_ACTIVITY_LOG_TYPES = ["CALL", "EMAIL", "TEXT", "SHOWING", "NOTE_ADDED"] as const;
+const CONTACT_ACTIVITY_LOG_TYPES = CONTACT_TOUCHPOINT_ACTIVITY_TYPES;
 
 const logActivitySchema = z.object({
   contactId: z.string().min(1),
@@ -265,4 +274,51 @@ export async function logContactActivityAction(
 
   revalidatePath(`/contacts/${contactId}`);
   return {};
+}
+
+const updateActivitySchema = z.object({
+  activityId: z.string().min(1),
+  type: z.enum(CONTACT_ACTIVITY_LOG_TYPES),
+  notes: z.preprocess(blankStringToUndefined, z.string().trim().optional()),
+});
+
+export interface UpdateContactActivityState {
+  error?: string;
+}
+
+/** Edits a logged activity in place — same loggable-types restriction as logContactActivityAction; system entries (CREATED/STATUS_CHANGED/SYNCED/OTHER) are never editable. */
+export async function updateContactActivityAction(
+  _prevState: UpdateContactActivityState | undefined,
+  formData: FormData,
+): Promise<UpdateContactActivityState> {
+  const session = await requireSession();
+
+  const parsed = updateActivitySchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Check the form and try again." };
+  }
+
+  const { activityId, type, notes } = parsed.data;
+  const description = notes ?? CONTACT_ACTIVITY_DEFAULT_DESCRIPTIONS[type];
+
+  const activity = await updateContactActivity(session.user.id, activityId, type, description);
+  if (!activity) {
+    return { error: "That activity could not be found." };
+  }
+
+  revalidatePath(`/contacts/${activity.contactId}`);
+  return {};
+}
+
+/** Deletes a logged activity — same loggable-types restriction as above. Fire-and-forget, same convention as completeTaskAction/cancelShowingAction. */
+export async function deleteContactActivityAction(formData: FormData) {
+  const session = await requireSession();
+
+  const activityId = formData.get("activityId");
+  if (typeof activityId !== "string") return;
+
+  const deleted = await deleteContactActivity(session.user.id, activityId);
+  if (!deleted) return;
+
+  revalidatePath(`/contacts/${deleted.contactId}`);
 }

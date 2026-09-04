@@ -9,6 +9,7 @@ import { DeleteButton } from "@/components/ui/delete-button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { FollowUpForm } from "@/components/contacts/follow-up-form";
 import { LogActivityForm } from "@/components/contacts/log-activity-form";
+import { ActivityRow } from "@/components/contacts/activity-row";
 import { AddShowingForm } from "@/components/showings/add-showing-form";
 import { cancelShowingAction, completeShowingAction } from "@/lib/showings/actions";
 import {
@@ -252,15 +253,7 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
             ) : (
               <div className="flex flex-col divide-y divide-border">
                 {contact.activities.map((activity) => (
-                  <div key={activity.id} className="px-5 py-3">
-                    <p className="text-sm text-foreground">
-                      <span className="font-medium">{CONTACT_ACTIVITY_TYPE_LABELS[activity.type]}</span>
-                      {activity.description && activity.description !== CONTACT_ACTIVITY_TYPE_LABELS[activity.type]
-                        ? ` — ${activity.description}`
-                        : ""}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{formatDateWithYear(activity.createdAt)}</p>
-                  </div>
+                  <ActivityRow key={activity.id} activity={activity} />
                 ))}
               </div>
             )}
