@@ -87,7 +87,7 @@ export default async function TransactionsPage(props: PageProps<"/transactions">
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-foreground">
-                      {contactDisplayName(transaction.client.contact)}
+                      {contactDisplayName(transaction.contact)}
                     </p>
                     <p className="truncate text-sm text-muted-foreground">
                       {transaction.propertyAddress ?? "No address on file"} ·{" "}

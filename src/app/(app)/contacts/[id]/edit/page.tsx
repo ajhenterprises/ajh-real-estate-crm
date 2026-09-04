@@ -44,6 +44,7 @@ export default async function EditContactPage(props: PageProps<"/contacts/[id]/e
             state: contact.state ?? undefined,
             zip: contact.zip ?? undefined,
             contactType: contact.contactType,
+            clientType: contact.clientType ?? undefined,
             source: contact.source,
             notes: contact.notes ?? undefined,
           }}

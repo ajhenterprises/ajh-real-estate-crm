@@ -44,7 +44,6 @@ export default async function EditTaskPage(props: PageProps<"/tasks/[id]/edit">)
             priority: task.priority,
             status: task.status,
             contactId: task.contactId ?? undefined,
-            clientId: task.clientId ?? undefined,
             transactionId: task.transactionId ?? undefined,
           }}
         />

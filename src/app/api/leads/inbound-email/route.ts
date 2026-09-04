@@ -107,7 +107,7 @@ async function handleShowingTimeShowing(owner: { id: string }, messageId: string
     return Response.json({ created: false, reason: "unparseable" });
   }
 
-  const { contactId, clientId } = await matchPersonByName(owner.id, parsed.name);
+  const contactId = await matchPersonByName(owner.id, parsed.name);
 
   const showing = await prisma.showing.create({
     data: {
@@ -117,12 +117,11 @@ async function handleShowingTimeShowing(owner: { id: string }, messageId: string
       source: "showingtime_email",
       externalId: messageId,
       contactId,
-      clientId,
       ownerId: owner.id,
     },
   });
 
-  return Response.json({ created: true, showingId: showing.id, matched: contactId !== null || clientId !== null });
+  return Response.json({ created: true, showingId: showing.id, matched: contactId !== null });
 }
 
 export async function POST(request: NextRequest) {

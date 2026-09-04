@@ -4,14 +4,13 @@ import { useActionState } from "react";
 import { createShowingAction } from "@/lib/showings/actions";
 import { Field, FormError, SubmitButton, TextArea, TextInput } from "@/components/ui/form";
 
-/** Embedded on the Contact and Client profile pages — pass exactly one of contactId/clientId, matching whichever profile this is rendered on. */
-export function AddShowingForm({ contactId, clientId }: { contactId?: string; clientId?: string }) {
+/** Embedded on a Contact's profile page. */
+export function AddShowingForm({ contactId }: { contactId: string }) {
   const [state, formAction, pending] = useActionState(createShowingAction, undefined);
 
   return (
     <form action={formAction} className="flex flex-col gap-4 p-5">
-      {contactId ? <input type="hidden" name="contactId" value={contactId} /> : null}
-      {clientId ? <input type="hidden" name="clientId" value={clientId} /> : null}
+      <input type="hidden" name="contactId" value={contactId} />
 
       <Field label="Property address" htmlFor="showingPropertyAddress">
         <TextInput id="showingPropertyAddress" name="propertyAddress" required />

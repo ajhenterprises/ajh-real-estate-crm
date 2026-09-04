@@ -1,5 +1,4 @@
 import type {
-  ClientStatus,
   ClientType,
   ContactActivityType,
   ContactType,
@@ -22,11 +21,18 @@ import type {
 
 export const CONTACT_TYPE_LABELS: Record<ContactType, string> = {
   LEAD: "Lead",
-  CLIENT: "Client",
+  ACTIVE_CLIENT: "Active client",
+  INACTIVE_CLIENT: "Inactive client",
   PAST_CLIENT: "Past client",
   VENDOR: "Vendor",
   OTHER: "Other",
 };
+
+// Which statuses count as an operational client — the same distinction
+// Client.status used to draw, now folded into ContactType. Used anywhere
+// that needs to gate a client-only feature (starting a transaction,
+// showing the Buyer/Seller type field) without hardcoding the three values.
+export const CLIENT_CONTACT_TYPES: readonly ContactType[] = ["ACTIVE_CLIENT", "INACTIVE_CLIENT", "PAST_CLIENT"];
 
 export const CONTACT_ACTIVITY_TYPE_LABELS: Record<ContactActivityType, string> = {
   CREATED: "Created",
@@ -38,12 +44,6 @@ export const CONTACT_ACTIVITY_TYPE_LABELS: Record<ContactActivityType, string> =
   EMAIL: "Email",
   TEXT: "Text",
   SHOWING: "Showing",
-};
-
-export const CLIENT_STATUS_LABELS: Record<ClientStatus, string> = {
-  ACTIVE: "Active",
-  INACTIVE: "Inactive",
-  PAST: "Past",
 };
 
 export const CLIENT_TYPE_LABELS: Record<ClientType, string> = {

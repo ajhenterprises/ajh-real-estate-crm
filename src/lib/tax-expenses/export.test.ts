@@ -14,7 +14,6 @@ function baseExpenseRow(overrides: Partial<ExpenseExportRow> = {}): ExpenseExpor
     deductibleStatus: "NEEDS_REVIEW",
     notes: null,
     transaction: null,
-    client: null,
     contact: null,
     ...overrides,
   };
@@ -30,7 +29,6 @@ function baseMileageRow(overrides: Partial<MileageExportRow> = {}): MileageExpor
     taxYear: 2026,
     notes: null,
     transaction: null,
-    client: null,
     contact: null,
     ...overrides,
   };
@@ -41,7 +39,7 @@ describe("buildExpenseCsv", () => {
     const csv = buildExpenseCsv([baseExpenseRow()]);
     const lines = csv.split("\r\n");
     expect(lines[0]).toBe(
-      "Date,Vendor,Category,Amount,Tax Year,Payment Method,Business Purpose,Business Use %,Status,Transaction/Client,Notes",
+      "Date,Vendor,Category,Amount,Tax Year,Payment Method,Business Purpose,Business Use %,Status,Transaction/Contact,Notes",
     );
     expect(lines[1]).toContain("Acme Software");
     expect(lines[1]).toContain("Software & Subscriptions");
@@ -71,7 +69,7 @@ describe("buildExpenseCsv", () => {
     const withNone = buildExpenseCsv([baseExpenseRow()]);
     const lines = withNone.split("\r\n");
     const cells = lines[1].split(",");
-    expect(cells[cells.length - 2]).toBe(""); // Transaction/Client column, second-to-last
+    expect(cells[cells.length - 2]).toBe(""); // Transaction/Contact column, second-to-last
   });
 
   it("quotes and escapes fields containing commas or quotes", () => {
@@ -94,7 +92,7 @@ describe("buildMileageCsv", () => {
   it("includes a header row and one row per trip with the required columns", () => {
     const csv = buildMileageCsv([baseMileageRow()]);
     const lines = csv.split("\r\n");
-    expect(lines[0]).toBe("Date,Start,Destination,Purpose,Miles,Tax Year,Transaction/Client,Notes");
+    expect(lines[0]).toBe("Date,Start,Destination,Purpose,Miles,Tax Year,Transaction/Contact,Notes");
     expect(lines[1]).toContain("Office");
     expect(lines[1]).toContain("123 Main St");
     expect(lines[1]).toContain("Showing");

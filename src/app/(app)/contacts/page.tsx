@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Select, TextInput } from "@/components/ui/form";
 import { contactDisplayName, formatDateWithYearAndOptionalTime } from "@/lib/format";
-import { CONTACT_TYPE_LABELS } from "@/lib/labels";
+import { CLIENT_CONTACT_TYPES, CONTACT_TYPE_LABELS } from "@/lib/labels";
 import { CONTACT_SOURCE_LABELS } from "@/lib/integrations/providers";
 import { deriveFollowUpStatus } from "@/lib/status";
 import type { ContactType } from "@/generated/prisma/enums";
@@ -29,13 +29,13 @@ export default async function ContactsPage(props: PageProps<"/contacts">) {
   const searchParams = await props.searchParams;
 
   const search = typeof searchParams.q === "string" ? searchParams.q : undefined;
-  const type = typeof searchParams.type === "string" ? (searchParams.type as ContactType) : undefined;
+  const contactType = typeof searchParams.type === "string" ? (searchParams.type as ContactType) : undefined;
   const followUp =
     typeof searchParams.followUp === "string" ? (searchParams.followUp as ContactFollowUpFilter) : undefined;
   const sort = typeof searchParams.sort === "string" ? (searchParams.sort as ContactSort) : undefined;
 
-  const contacts = await listContacts(session.user.id, { search, type, followUp, sort });
-  const hasFilters = Boolean(search || type || followUp);
+  const contacts = await listContacts(session.user.id, { search, contactType, followUp, sort });
+  const hasFilters = Boolean(search || contactType || followUp);
 
   return (
     <div className="flex flex-col gap-6">
@@ -58,7 +58,7 @@ export default async function ContactsPage(props: PageProps<"/contacts">) {
         <div className="min-w-[200px] flex-1">
           <TextInput type="search" name="q" placeholder="Search name, email, phone" defaultValue={search} />
         </div>
-        <Select name="type" defaultValue={type ?? ""}>
+        <Select name="type" defaultValue={contactType ?? ""}>
           <option value="">All types</option>
           {Object.entries(CONTACT_TYPE_LABELS).map(([value, label]) => (
             <option key={value} value={value}>
@@ -104,6 +104,8 @@ export default async function ContactsPage(props: PageProps<"/contacts">) {
           <div className="flex flex-col divide-y divide-border">
             {contacts.map((contact) => {
               const followUpStatus = deriveFollowUpStatus(contact.nextFollowUpDate);
+              const isClient = CLIENT_CONTACT_TYPES.includes(contact.contactType);
+              const recent = contact.transactions[0];
               return (
                 <Link
                   key={contact.id}
@@ -111,15 +113,22 @@ export default async function ContactsPage(props: PageProps<"/contacts">) {
                   className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-surface-muted"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">
-                      {contactDisplayName(contact)}
-                      {contact.client ? " · Client" : ""}
-                    </p>
+                    <p className="text-sm font-medium text-foreground">{contactDisplayName(contact)}</p>
                     <p className="truncate text-sm text-muted-foreground">
                       {[contact.email, contact.phone].filter(Boolean).join(" · ") || "No contact info on file"}
                     </p>
+                    {recent ? (
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        Most recent: {recent.propertyAddress ?? "Transaction"}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+                    <span
+                      className={`text-xs font-medium ${isClient ? "text-status-ontrack" : "text-muted-foreground"}`}
+                    >
+                      {CONTACT_TYPE_LABELS[contact.contactType]}
+                    </span>
                     <span className="text-xs text-muted-foreground">
                       {CONTACT_SOURCE_LABELS[contact.source]}
                     </span>

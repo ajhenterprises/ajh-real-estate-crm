@@ -92,7 +92,6 @@ export async function getCalendarMonthItems(
         propertyAddress: true,
         scheduledAt: true,
         contact: { select: { firstName: true, lastName: true } },
-        client: { select: { contact: { select: { firstName: true, lastName: true } } } },
       },
     }),
   ]);
@@ -127,11 +126,7 @@ export async function getCalendarMonthItems(
     });
   }
   for (const showing of showings) {
-    const who = showing.client
-      ? contactDisplayName(showing.client.contact)
-      : showing.contact
-        ? contactDisplayName(showing.contact)
-        : "Showing";
+    const who = showing.contact ? contactDisplayName(showing.contact) : "Showing";
     push(dayKeyUTC(showing.scheduledAt), {
       kind: "showing",
       id: showing.id,

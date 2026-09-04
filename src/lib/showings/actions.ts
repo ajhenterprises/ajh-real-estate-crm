@@ -24,14 +24,12 @@ const showingFieldsSchema = {
 const createShowingSchema = z.object({
   ...showingFieldsSchema,
   contactId: optionalString,
-  clientId: optionalString,
 });
 
 const updateShowingSchema = z.object({
   showingId: z.string().min(1),
   status: z.enum(SHOWING_STATUSES),
   contactId: optionalString,
-  clientId: optionalString,
   ...showingFieldsSchema,
 });
 
@@ -40,66 +38,32 @@ export interface ShowingFormState {
 }
 
 /**
- * Verifies contactId/clientId (if provided) belong to this user.
- * `requireAtLeastOne` is true for creation — a showing always has to
- * answer "who is this for" when the agent is the one adding it (same rule
- * stated in the schema comment on the Showing model itself) — but false
- * for editing an existing showing, since the one legitimate way to reach
- * both-null is a ShowingTime import that couldn't confidently match a
- * name, and the edit form is exactly how the agent links it afterward; the
- * record already exists, so nothing is lost by letting them save other
- * changes (address, time) before they've picked who it's for.
+ * Verifies contactId (if provided) belongs to this user. `requireContact`
+ * is true for creation — a showing always has to answer "who is this for"
+ * when the agent is the one adding it (same rule stated in the schema
+ * comment on the Showing model itself) — but false for editing an existing
+ * showing, since the one legitimate way to reach a null contact is a
+ * ShowingTime import that couldn't confidently match a name, and the edit
+ * form is exactly how the agent links it afterward; the record already
+ * exists, so nothing is lost by letting them save other changes (address,
+ * time) before they've picked who it's for.
  */
 async function resolveShowingSubject(
   userId: string,
   contactId: string | undefined,
-  clientId: string | undefined,
-  requireAtLeastOne: boolean,
-): Promise<{ contactId: string | null; clientId: string | null } | { error: string }> {
-  if (requireAtLeastOne && !contactId && !clientId) {
-    return { error: "A showing needs a contact or client." };
+  requireContact: boolean,
+): Promise<{ contactId: string | null } | { error: string }> {
+  if (requireContact && !contactId) {
+    return { error: "A showing needs a contact." };
   }
   if (contactId) {
     const contact = await prisma.contact.findFirst({ where: { id: contactId, ownerId: userId } });
     if (!contact) return { error: "That contact could not be found." };
   }
-  if (clientId) {
-    const client = await prisma.client.findFirst({ where: { id: clientId, ownerId: userId } });
-    if (!client) return { error: "That client could not be found." };
-  }
-  return { contactId: contactId ?? null, clientId: clientId ?? null };
+  return { contactId: contactId ?? null };
 }
 
-/**
- * Revalidates both the Contact and Client pages for whichever person a
- * showing is tied to — not just whichever single id the showing itself
- * carries. getContactById/getClientById (src/lib/repos/contacts.ts,
- * clients.ts) show a showing on BOTH of that person's profile pages
- * regardless of which one it's linked by (contactId or clientId); without
- * resolving the counterpart here, the page that wasn't directly linked
- * keeps serving Next.js's cached version indefinitely instead of picking
- * up the new/changed showing.
- */
-async function revalidateShowingSubjectPaths(contactId: string | null, clientId: string | null) {
-  let resolvedContactId = contactId;
-  let resolvedClientId = clientId;
-
-  if (contactId && !clientId) {
-    const contact = await prisma.contact.findUnique({
-      where: { id: contactId },
-      select: { client: { select: { id: true } } },
-    });
-    resolvedClientId = contact?.client?.id ?? null;
-  } else if (clientId && !contactId) {
-    const client = await prisma.client.findUnique({ where: { id: clientId }, select: { contactId: true } });
-    resolvedContactId = client?.contactId ?? null;
-  }
-
-  if (resolvedContactId) revalidatePath(`/contacts/${resolvedContactId}`);
-  if (resolvedClientId) revalidatePath(`/clients/${resolvedClientId}`);
-}
-
-/** Embedded quick-add, used on the Contact and Client profile pages — stays on the same page rather than redirecting, same convention as logContactActivityAction/setContactFollowUpDateAction. */
+/** Embedded quick-add, used on a Contact's profile page — stays on the same page rather than redirecting, same convention as logContactActivityAction/setContactFollowUpDateAction. */
 export async function createShowingAction(
   _prevState: ShowingFormState | undefined,
   formData: FormData,
@@ -111,8 +75,8 @@ export async function createShowingAction(
     return { error: parsed.error.issues[0]?.message ?? "Check the form and try again." };
   }
 
-  const { contactId, clientId, propertyAddress, scheduledAt, notes } = parsed.data;
-  const subject = await resolveShowingSubject(session.user.id, contactId, clientId, true);
+  const { contactId, propertyAddress, scheduledAt, notes } = parsed.data;
+  const subject = await resolveShowingSubject(session.user.id, contactId, true);
   if ("error" in subject) return subject;
 
   await prisma.showing.create({
@@ -121,7 +85,6 @@ export async function createShowingAction(
       scheduledAt: parseDateTimeInputValue(scheduledAt)!,
       notes,
       contactId: subject.contactId,
-      clientId: subject.clientId,
       ownerId: session.user.id,
     },
   });
@@ -129,7 +92,7 @@ export async function createShowingAction(
   revalidatePath("/showings");
   revalidatePath("/calendar");
   revalidatePath("/");
-  await revalidateShowingSubjectPaths(subject.contactId, subject.clientId);
+  if (subject.contactId) revalidatePath(`/contacts/${subject.contactId}`);
   return {};
 }
 
@@ -144,14 +107,14 @@ export async function updateShowingAction(
     return { error: parsed.error.issues[0]?.message ?? "Check the form and try again." };
   }
 
-  const { showingId, status, contactId, clientId, propertyAddress, scheduledAt, notes } = parsed.data;
+  const { showingId, status, contactId, propertyAddress, scheduledAt, notes } = parsed.data;
 
   const existing = await prisma.showing.findFirst({ where: { id: showingId, ownerId: session.user.id } });
   if (!existing) {
     return { error: "That showing could not be found." };
   }
 
-  const subject = await resolveShowingSubject(session.user.id, contactId, clientId, false);
+  const subject = await resolveShowingSubject(session.user.id, contactId, false);
   if ("error" in subject) return subject;
 
   await prisma.showing.update({
@@ -162,7 +125,6 @@ export async function updateShowingAction(
       notes,
       status,
       contactId: subject.contactId,
-      clientId: subject.clientId,
     },
   });
 
@@ -170,46 +132,36 @@ export async function updateShowingAction(
   revalidatePath(`/showings/${existing.id}`);
   revalidatePath("/calendar");
   revalidatePath("/");
-  await revalidateShowingSubjectPaths(existing.contactId, existing.clientId);
-  await revalidateShowingSubjectPaths(subject.contactId, subject.clientId);
+  if (existing.contactId) revalidatePath(`/contacts/${existing.contactId}`);
+  if (subject.contactId) revalidatePath(`/contacts/${subject.contactId}`);
   redirect(`/showings/${existing.id}`);
 }
 
 /**
  * Sets status and, for COMPLETED, logs it as a SHOWING touchpoint on the
- * linked contact — resolving through the linked client when the showing was
- * only ever tied to a client, since every Client has exactly one Contact.
- * This is what actually creates ContactActivityType.SHOWING entries from a
- * real scheduled showing, rather than only the manual "log activity" form.
+ * linked contact. This is what actually creates ContactActivityType.SHOWING
+ * entries from a real scheduled showing, rather than only the manual "log
+ * activity" form.
  */
 async function setShowingStatus(showingId: string, status: "SCHEDULED" | "COMPLETED" | "CANCELLED") {
   const session = await requireSession();
 
   const existing = await prisma.showing.findFirst({
     where: { id: showingId, ownerId: session.user.id },
-    include: { client: { select: { contactId: true } } },
   });
   if (!existing) return;
 
   await prisma.showing.update({ where: { id: existing.id }, data: { status } });
 
-  if (status === "COMPLETED") {
-    const contactId = existing.contactId ?? existing.client?.contactId ?? null;
-    if (contactId) {
-      await createContactActivity(
-        session.user.id,
-        contactId,
-        "SHOWING",
-        `Showing at ${existing.propertyAddress}`,
-      );
-    }
+  if (status === "COMPLETED" && existing.contactId) {
+    await createContactActivity(session.user.id, existing.contactId, "SHOWING", `Showing at ${existing.propertyAddress}`);
   }
 
   revalidatePath("/showings");
   revalidatePath(`/showings/${existing.id}`);
   revalidatePath("/calendar");
   revalidatePath("/");
-  await revalidateShowingSubjectPaths(existing.contactId, existing.clientId);
+  if (existing.contactId) revalidatePath(`/contacts/${existing.contactId}`);
 }
 
 export async function completeShowingAction(formData: FormData) {

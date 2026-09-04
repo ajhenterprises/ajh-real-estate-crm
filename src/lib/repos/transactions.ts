@@ -23,15 +23,15 @@ export function listTransactions(userId: string, filters: TransactionListFilters
             OR: [
               { propertyAddress: { contains: search, mode: "insensitive" } },
               { mlsNumber: { contains: search, mode: "insensitive" } },
-              { client: { contact: { firstName: { contains: search, mode: "insensitive" } } } },
-              { client: { contact: { lastName: { contains: search, mode: "insensitive" } } } },
+              { contact: { firstName: { contains: search, mode: "insensitive" } } },
+              { contact: { lastName: { contains: search, mode: "insensitive" } } },
             ],
           }
         : {}),
     },
     orderBy: { updatedAt: "desc" },
     include: {
-      client: { include: { contact: true } },
+      contact: true,
       events: { where: { status: "PENDING" }, orderBy: { date: "asc" }, take: 1 },
     },
   });
@@ -41,7 +41,7 @@ export function getTransactionById(userId: string, transactionId: string) {
   return prisma.transaction.findFirst({
     where: { id: transactionId, ownerId: userId },
     include: {
-      client: { include: { contact: true } },
+      contact: true,
       events: { orderBy: { date: "asc" } },
       // createdAt/id order (not status/dueDate) so checklist tasks group by
       // category in the same order they were generated from templates —
@@ -68,10 +68,9 @@ export function getTransactionEventById(userId: string, eventId: string) {
   });
 }
 
-/** Owner-scoped existence + ownership check, used before nesting a create under a client. */
-export function getOwnedClient(userId: string, clientId: string) {
-  return prisma.client.findFirst({
-    where: { id: clientId, ownerId: userId },
-    include: { contact: true },
+/** Owner-scoped existence + ownership check, used before nesting a create under a contact. */
+export function getOwnedContact(userId: string, contactId: string) {
+  return prisma.contact.findFirst({
+    where: { id: contactId, ownerId: userId },
   });
 }

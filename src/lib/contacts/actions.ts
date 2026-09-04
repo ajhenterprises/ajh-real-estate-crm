@@ -5,11 +5,13 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
-import { createContactActivity, ensureClientForContact, setContactFollowUpDate } from "@/lib/contacts/mutations";
+import { createContactActivity, setContactFollowUpDate } from "@/lib/contacts/mutations";
 import { blankStringToUndefined, CONTACT_ACTIVITY_DEFAULT_DESCRIPTIONS } from "@/lib/contacts/activity";
 import { combineDateAndTimeUTC } from "@/lib/format";
+import { CLIENT_CONTACT_TYPES } from "@/lib/labels";
 
-const CONTACT_TYPES = ["LEAD", "CLIENT", "PAST_CLIENT", "VENDOR", "OTHER"] as const;
+const CONTACT_TYPES = ["LEAD", "ACTIVE_CLIENT", "INACTIVE_CLIENT", "PAST_CLIENT", "VENDOR", "OTHER"] as const;
+const CLIENT_TYPES = ["BUYER", "SELLER", "BUYER_AND_SELLER", "OTHER"] as const;
 const CONTACT_SOURCES = [
   "MANUAL",
   "BOLDTRAIL",
@@ -37,6 +39,11 @@ const createContactSchema = z.object({
   state: z.preprocess(emptyToUndefined, z.string().trim().optional()),
   zip: z.preprocess(emptyToUndefined, z.string().trim().optional()),
   contactType: z.enum(CONTACT_TYPES),
+  // Buyer/seller/both — only meaningful once contactType is one of the
+  // client statuses, but not validated against that here: an agent can set
+  // it in advance, or leave a past client's type in place after their
+  // status changes. The select simply submits "" (-> null) when N/A.
+  clientType: z.preprocess(emptyToUndefined, z.enum(CLIENT_TYPES).optional()),
   source: z.enum(CONTACT_SOURCES),
   notes: z.preprocess(emptyToUndefined, z.string().trim().optional()),
 });
@@ -59,6 +66,7 @@ export async function createContactAction(
   const contact = await prisma.contact.create({
     data: {
       ...parsed.data,
+      clientType: parsed.data.clientType ?? null,
       ownerId: session.user.id,
       activities: {
         create: {
@@ -69,14 +77,6 @@ export async function createContactAction(
       },
     },
   });
-
-  if (parsed.data.contactType === "CLIENT") {
-    const { created } = await ensureClientForContact(session.user.id, contact.id);
-    if (created) {
-      await createContactActivity(session.user.id, contact.id, "STATUS_CHANGED", "Converted to client");
-      revalidatePath("/clients");
-    }
-  }
 
   revalidatePath("/contacts");
   redirect(`/contacts/${contact.id}`);
@@ -102,23 +102,31 @@ export async function updateContactAction(
     return { error: parsed.error.issues[0]?.message ?? "Check the form and try again." };
   }
 
-  // Ownership check via the where clause itself, not a separate lookup —
-  // updateMany matching zero rows (wrong id, or someone else's contact)
-  // is indistinguishable from "not found" and handled identically.
-  const result = await prisma.contact.updateMany({
+  const existing = await prisma.contact.findFirst({
     where: { id: contactId, ownerId: session.user.id },
-    data: parsed.data,
+    select: { contactType: true },
   });
-  if (result.count === 0) {
+  if (!existing) {
     return { error: "That contact could not be found." };
   }
 
-  if (parsed.data.contactType === "CLIENT") {
-    const { created } = await ensureClientForContact(session.user.id, contactId);
-    if (created) {
-      await createContactActivity(session.user.id, contactId, "STATUS_CHANGED", "Converted to client");
-      revalidatePath("/clients");
-    }
+  await prisma.contact.update({
+    where: { id: contactId },
+    data: { ...parsed.data, clientType: parsed.data.clientType ?? null },
+  });
+
+  // A status change worth remembering in the timeline — same trigger the
+  // old "Convert to Client" button used to log, now just a side effect of
+  // editing the one status field instead of a separate action.
+  if (parsed.data.contactType !== existing.contactType) {
+    const becameClient =
+      CLIENT_CONTACT_TYPES.includes(parsed.data.contactType) && !CLIENT_CONTACT_TYPES.includes(existing.contactType);
+    await createContactActivity(
+      session.user.id,
+      contactId,
+      "STATUS_CHANGED",
+      becameClient ? "Converted to client" : "Status changed",
+    );
   }
 
   revalidatePath("/contacts");
@@ -127,14 +135,13 @@ export async function updateContactAction(
 }
 
 /**
- * Deleting a Contact cascades (at the database level — see
- * onDelete: Cascade in schema.prisma) into its Client row if one exists,
- * which itself cascades into that Client's Transactions and everything
- * hanging off them. That's real, often irreplaceable business data, so a
- * contact that has ever been converted to a client can never be deleted
- * through this action — the person has to be reachable some other way
- * (e.g. deactivating the Client) instead of losing transaction history to
- * an accidental click.
+ * Deleting a Contact cascades (at the database level — see onDelete:
+ * Cascade in schema.prisma) into every Transaction they're the contact
+ * for, and everything hanging off those (events, tasks, documents,
+ * contract information). That's real, often irreplaceable business data,
+ * so a contact with any transactions on file can never be deleted through
+ * this action — set their status to Past Client instead of losing
+ * transaction history to an accidental click.
  */
 export interface DeleteContactState {
   error?: string;
@@ -153,57 +160,19 @@ export async function deleteContactAction(
 
   const contact = await prisma.contact.findFirst({
     where: { id: contactId, ownerId: session.user.id },
-    select: { id: true, client: { select: { id: true } } },
+    select: { id: true, _count: { select: { transactions: true } } },
   });
   if (!contact) {
     return { error: "That contact could not be found." };
   }
-  if (contact.client) {
-    return { error: "This contact is a client and can't be deleted. Deactivate the client instead." };
+  if (contact._count.transactions > 0) {
+    return { error: "This contact has transactions on file and can't be deleted. Set their status to Past Client instead." };
   }
 
   await prisma.contact.delete({ where: { id: contact.id } });
 
   revalidatePath("/contacts");
   redirect("/contacts");
-}
-
-const CLIENT_TYPES = ["BUYER", "SELLER", "BUYER_AND_SELLER", "OTHER"] as const;
-
-/**
- * Idempotent by construction: Client.contactId is unique, so a second
- * conversion attempt (double submit, race, stale tab) either finds the
- * client that already exists or hits the unique constraint and is treated
- * the same way — it never creates a second Client for one Contact.
- */
-export async function convertToClientAction(formData: FormData) {
-  const session = await requireSession();
-
-  const contactId = formData.get("contactId");
-  const typeRaw = formData.get("type");
-  if (typeof contactId !== "string") return;
-
-  const typeParsed = z.enum(CLIENT_TYPES).safeParse(typeRaw);
-  if (!typeParsed.success) return;
-
-  const contact = await prisma.contact.findFirst({
-    where: { id: contactId, ownerId: session.user.id },
-    include: { client: true },
-  });
-  if (!contact) return;
-
-  if (contact.client) {
-    redirect(`/clients/${contact.client.id}`);
-  }
-
-  const { client, created } = await ensureClientForContact(session.user.id, contact.id, typeParsed.data);
-  if (created) {
-    await createContactActivity(session.user.id, contact.id, "STATUS_CHANGED", "Converted to client");
-  }
-
-  revalidatePath(`/contacts/${contact.id}`);
-  revalidatePath("/clients");
-  redirect(`/clients/${client.id}`);
 }
 
 const optionalDateOnly = z.preprocess(

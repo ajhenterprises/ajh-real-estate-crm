@@ -1,25 +1,25 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { getOwnedClient } from "@/lib/repos/transactions";
+import { getOwnedContact } from "@/lib/repos/transactions";
 import { createTransactionAction } from "@/lib/transactions/actions";
 import { Card } from "@/components/ui/card";
 import { TransactionForm } from "@/components/transactions/transaction-form";
 import { contactDisplayName } from "@/lib/format";
 
-export default async function NewTransactionPage(props: PageProps<"/clients/[id]/transactions/new">) {
+export default async function NewTransactionPage(props: PageProps<"/contacts/[id]/transactions/new">) {
   const session = await requireSession();
   const { id } = await props.params;
 
-  const client = await getOwnedClient(session.user.id, id);
-  if (!client) notFound();
+  const contact = await getOwnedContact(session.user.id, id);
+  if (!contact) notFound();
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <p className="text-sm text-muted-foreground">
-          <Link href={`/clients/${client.id}`} className="hover:text-foreground">
-            {contactDisplayName(client.contact)}
+          <Link href={`/contacts/${contact.id}`} className="hover:text-foreground">
+            {contactDisplayName(contact)}
           </Link>{" "}
           / New Transaction
         </p>
@@ -29,7 +29,7 @@ export default async function NewTransactionPage(props: PageProps<"/clients/[id]
       <Card className="max-w-2xl p-6">
         <TransactionForm
           action={createTransactionAction}
-          hiddenField={{ name: "clientId", value: client.id }}
+          hiddenField={{ name: "contactId", value: contact.id }}
           submitLabel="Save transaction"
           pendingLabel="Saving…"
         />

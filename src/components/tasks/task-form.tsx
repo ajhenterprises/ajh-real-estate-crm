@@ -8,8 +8,7 @@ import { contactDisplayName } from "@/lib/format";
 
 export interface TaskFormOptions {
   contacts: { id: string; firstName: string; lastName: string }[];
-  clients: { id: string; contact: { firstName: string; lastName: string } }[];
-  transactions: { id: string; propertyAddress: string | null; client: { contact: { firstName: string; lastName: string } } }[];
+  transactions: { id: string; propertyAddress: string | null; contact: { firstName: string; lastName: string } }[];
 }
 
 export interface TaskFormValues {
@@ -19,7 +18,6 @@ export interface TaskFormValues {
   priority?: string;
   status?: string;
   contactId?: string;
-  clientId?: string;
   transactionId?: string;
 }
 
@@ -88,7 +86,7 @@ export function TaskForm({
         </Select>
       </Field>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Contact" htmlFor="contactId" hint="Optional">
           <Select id="contactId" name="contactId" defaultValue={defaultValues?.contactId ?? ""}>
             <option value="">None</option>
@@ -99,22 +97,12 @@ export function TaskForm({
             ))}
           </Select>
         </Field>
-        <Field label="Client" htmlFor="clientId" hint="Optional">
-          <Select id="clientId" name="clientId" defaultValue={defaultValues?.clientId ?? ""}>
-            <option value="">None</option>
-            {options.clients.map((client) => (
-              <option key={client.id} value={client.id}>
-                {contactDisplayName(client.contact)}
-              </option>
-            ))}
-          </Select>
-        </Field>
         <Field label="Transaction" htmlFor="transactionId" hint="Optional">
           <Select id="transactionId" name="transactionId" defaultValue={defaultValues?.transactionId ?? ""}>
             <option value="">None</option>
             {options.transactions.map((transaction) => (
               <option key={transaction.id} value={transaction.id}>
-                {transaction.propertyAddress ?? contactDisplayName(transaction.client.contact)}
+                {transaction.propertyAddress ?? contactDisplayName(transaction.contact)}
               </option>
             ))}
           </Select>

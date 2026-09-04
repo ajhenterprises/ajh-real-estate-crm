@@ -75,7 +75,6 @@ const APP_TABLES = [
   "users",
   "contacts",
   "contact_activities",
-  "clients",
   "transactions",
   "transaction_events",
   "tasks",

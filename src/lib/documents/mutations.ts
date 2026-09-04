@@ -37,17 +37,15 @@ function isFileNotFoundError(error: unknown): boolean {
 
 /**
  * A document is owned transitively through whichever of transaction /
- * client / contact / expense it's attached to. Shared by every
- * ownership-scoped Document query in this codebase (this file, actions.ts,
- * repos/documents.ts) so adding a new attachment point — as `expense`
- * was — is one change, not four independently-drifting copies of the same
- * OR clause.
+ * contact / expense it's attached to. Shared by every ownership-scoped
+ * Document query in this codebase (this file, actions.ts, repos/documents.ts)
+ * so adding a new attachment point — as `expense` was — is one change, not
+ * four independently-drifting copies of the same OR clause.
  */
 export function documentOwnershipFilter(userId: string): Prisma.DocumentWhereInput {
   return {
     OR: [
       { transaction: { ownerId: userId } },
-      { client: { ownerId: userId } },
       { contact: { ownerId: userId } },
       { expense: { ownerId: userId } },
     ],

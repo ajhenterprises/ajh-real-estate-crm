@@ -13,7 +13,6 @@ export interface ShowingListFilters {
 
 const showingInclude = {
   contact: { select: { id: true, firstName: true, lastName: true } },
-  client: { select: { id: true, contact: { select: { firstName: true, lastName: true } } } },
 } as const;
 
 function showingOrderBy(sort: ShowingSort | undefined) {
@@ -46,8 +45,6 @@ export function listShowings(userId: string, filters: ShowingListFilters = {}) {
               { propertyAddress: { contains: search, mode: "insensitive" as const } },
               { contact: { firstName: { contains: search, mode: "insensitive" as const } } },
               { contact: { lastName: { contains: search, mode: "insensitive" as const } } },
-              { client: { contact: { firstName: { contains: search, mode: "insensitive" as const } } } },
-              { client: { contact: { lastName: { contains: search, mode: "insensitive" as const } } } },
             ],
           }
         : {}),
@@ -64,20 +61,13 @@ export function getShowingById(userId: string, id: string) {
   });
 }
 
-/** Contact/Client option lists for the edit form's "who is this for" pickers — same shape as listTaskFormOptions, so an unmatched (webhook-imported) showing can be linked to someone after the fact. */
+/** Contact option list for the edit form's "who is this for" picker — so an unmatched (webhook-imported) showing can be linked to someone after the fact. */
 export async function listShowingFormOptions(userId: string) {
-  const [contacts, clients] = await Promise.all([
-    prisma.contact.findMany({
-      where: { ownerId: userId },
-      select: { id: true, firstName: true, lastName: true },
-      orderBy: { lastName: "asc" },
-    }),
-    prisma.client.findMany({
-      where: { ownerId: userId },
-      select: { id: true, contact: { select: { firstName: true, lastName: true } } },
-      orderBy: { contact: { lastName: "asc" } },
-    }),
-  ]);
+  const contacts = await prisma.contact.findMany({
+    where: { ownerId: userId },
+    select: { id: true, firstName: true, lastName: true },
+    orderBy: { lastName: "asc" },
+  });
 
-  return { contacts, clients };
+  return { contacts };
 }

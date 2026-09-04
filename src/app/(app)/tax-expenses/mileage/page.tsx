@@ -121,11 +121,9 @@ export default async function MileagePage(props: PageProps<"/tax-expenses/mileag
                 {records.map((record) => {
                   const associationLabel = record.transaction
                     ? record.transaction.propertyAddress ?? "Transaction"
-                    : record.client
-                      ? `${record.client.contact.firstName} ${record.client.contact.lastName}`
-                      : record.contact
-                        ? `${record.contact.firstName} ${record.contact.lastName}`
-                        : "—";
+                    : record.contact
+                      ? `${record.contact.firstName} ${record.contact.lastName}`
+                      : "—";
                   return (
                     <tr key={record.id}>
                       <td className="px-5 py-2.5 whitespace-nowrap text-foreground">{formatDateWithYear(record.date)}</td>

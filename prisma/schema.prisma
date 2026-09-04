@@ -29,7 +29,6 @@ model User {
   updatedAt    DateTime @updatedAt
 
   contacts                     Contact[]
-  clients                      Client[]
   transactions                 Transaction[]
   tasks                        Task[]
   documents                    Document[]
@@ -67,12 +66,17 @@ enum ContactSource {
   OTHER
 }
 
-// A general categorization tag for the contact. Independent of whether a
-// Client record exists for them — a contact can be tagged CLIENT before or
-// after the operational Client relationship is created.
+// One status field covers a contact's whole lifecycle — lead, all the way
+// through to past client — replacing what used to be split across
+// Contact.contactType and the separate Client.status. See the migration
+// that introduced this (20260904000000_merge_contact_and_client) for how
+// existing data maps onto it: a Client's ACTIVE/INACTIVE/PAST status wins
+// over the old LEAD/CLIENT/PAST_CLIENT value whenever both existed for the
+// same person, since it was the more specific of the two.
 enum ContactType {
   LEAD
-  CLIENT
+  ACTIVE_CLIENT
+  INACTIVE_CLIENT
   PAST_CLIENT
   VENDOR
   OTHER
@@ -91,6 +95,12 @@ model Contact {
   state           String?
   zip             String?
   contactType     ContactType   @default(LEAD)
+  // Buyer/seller/both — orthogonal to contactType above (a status), only
+  // meaningful once someone is an active/inactive/past client, but kept
+  // independent rather than folded into contactType so it survives a
+  // status change (e.g. ACTIVE_CLIENT -> PAST_CLIENT keeps knowing they
+  // were a buyer). Null for a lead/vendor/contact who was never a client.
+  clientType      ClientType?
   source          ContactSource @default(MANUAL)
   // Identifier of this record in the source system (e.g. the BoldTrail or
   // Follow Up Boss contact ID). Lets future sync jobs match records instead
@@ -107,7 +117,7 @@ model Contact {
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
-  client         Client?
+  transactions   Transaction[]
   tasks          Task[]
   documents      Document[]
   activities     ContactActivity[]
@@ -123,6 +133,7 @@ model Contact {
   @@index([phone])
   @@index([source, sourceContactId])
   @@index([nextFollowUpDate])
+  @@index([contactType])
   @@map("contacts")
 }
 
@@ -170,50 +181,14 @@ model ContactActivity {
   @@map("contact_activities")
 }
 
-// ---------------------------------------------------------------------------
-// Clients — a contact that has an active/past business relationship
-// ---------------------------------------------------------------------------
-
-enum ClientStatus {
-  ACTIVE
-  INACTIVE
-  PAST
-}
-
+// Buyer/seller/both — see Contact.clientType's own comment. The Client
+// model this used to live on is gone (merged into Contact); kept as its
+// own enum since it's still exactly the right shape.
 enum ClientType {
   BUYER
   SELLER
   BUYER_AND_SELLER
   OTHER
-}
-
-model Client {
-  id     String       @id @default(cuid())
-  status ClientStatus @default(ACTIVE)
-  type   ClientType
-  notes  String?
-
-  contactId String  @unique
-  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
-
-  // Denormalized from contact.ownerId so authorization checks and list
-  // queries never need to join through Contact.
-  ownerId String
-  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-
-  transactions   Transaction[]
-  tasks          Task[]
-  documents      Document[]
-  expenses       Expense[]
-  mileageRecords MileageRecord[]
-  showings       Showing[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([ownerId])
-  @@index([status])
-  @@map("clients")
 }
 
 enum ShowingStatus {
@@ -224,15 +199,14 @@ enum ShowingStatus {
 
 // A scheduled property showing — forward-looking (appears on the Calendar
 // and the Showings tab), distinct from ContactActivityType.SHOWING, which
-// just logs that a showing already happened. Tied to a Contact and/or a
-// Client when created manually (never neither — enforced in
-// src/lib/showings/actions.ts's createShowingAction, not the database,
-// same convention as Task's optional relations) so it always answers "who
-// is this showing for." The one exception is a ShowingTime-email import
-// (source "showingtime_email") that couldn't confidently match a buyer
-// name to an existing Contact/Client — both stay null rather than guess
-// wrong, and the showing appears in the CRM unassigned so the agent can
-// link it from the edit page instead of it being silently dropped.
+// just logs that a showing already happened. Tied to a Contact when
+// created manually (never null — enforced in src/lib/showings/actions.ts's
+// createShowingAction, not the database) so it always answers "who is this
+// showing for." The one exception is a ShowingTime-email import (source
+// "showingtime_email") that couldn't confidently match a buyer name to an
+// existing Contact — stays null rather than guess wrong, and the showing
+// appears in the CRM unassigned so the agent can link it from the edit
+// page instead of it being silently dropped.
 model Showing {
   id              String        @id @default(cuid())
   propertyAddress String
@@ -250,8 +224,6 @@ model Showing {
 
   contactId String?
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  clientId  String?
-  client    Client?  @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
@@ -262,7 +234,6 @@ model Showing {
   @@index([ownerId])
   @@index([scheduledAt])
   @@index([contactId])
-  @@index([clientId])
   @@map("showings")
 }
 
@@ -305,10 +276,10 @@ model Transaction {
 
   notes String?
 
-  clientId String
-  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
-  // Denormalized from client.ownerId for authorization/list queries.
+  // Denormalized from contact.ownerId for authorization/list queries.
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
@@ -323,7 +294,7 @@ model Transaction {
   updatedAt DateTime @updatedAt
 
   @@index([ownerId])
-  @@index([clientId])
+  @@index([contactId])
   @@index([status])
   @@index([expectedClosingDate])
   @@map("transactions")
@@ -456,9 +427,6 @@ model Task {
   contactId String?
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
-  clientId String?
-  client   Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
-
   transactionId String?
   transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 
@@ -494,7 +462,6 @@ model Task {
   @@index([status])
   @@index([dueDate])
   @@index([contactId])
-  @@index([clientId])
   @@index([transactionId])
   @@index([templateId])
   @@map("tasks")
@@ -640,7 +607,7 @@ enum DocumentStatus {
 // any S3-compatible bucket, e.g. Cloudflare R2, in production) has no
 // knowledge of what owns a document. A future record type (e.g. an
 // expense/tax record, not built yet) reuses the same storage layer and R2
-// bucket exactly the way contactId/clientId/transactionId already do:
+// bucket exactly the way contactId/transactionId already do:
 // one more nullable FK column here (e.g. expenseRecordId), a new key
 // prefix (e.g. "expenses/{id}/{uuid}.ext"), and one more clause in
 // deleteDocument's ownership OR — no second storage system, no schema
@@ -675,9 +642,6 @@ model Document {
 
   contactId String?
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
-
-  clientId String?
-  client   Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   transactionId String?
   transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
@@ -716,7 +680,6 @@ model Document {
   updatedAt DateTime @updatedAt
 
   @@index([transactionId])
-  @@index([clientId])
   @@index([contactId])
   @@index([expenseId])
   @@index([uploadedByUserId])
@@ -984,7 +947,7 @@ model ExternalSyncLink {
   // Denormalized rather than derived by joining through whichever table
   // internalRecordType points at (Contact/Transaction/Task each have
   // their own ownerId) — same convention as Transaction.ownerId being
-  // denormalized from Client.ownerId. This is what makes "never expose
+  // denormalized from Contact.ownerId. This is what makes "never expose
   // one user's external IDs to another" a single, uniform filter instead
   // of a per-record-type conditional join.
   ownerId String
@@ -1151,15 +1114,12 @@ model Expense {
   notes String?
 
   // Optional associations — independently nullable, same pattern as
-  // Document's contactId/clientId/transactionId. Neither an expense nor a
+  // Document's contactId/transactionId. Neither an expense nor a
   // mileage record is ever forced to belong to a transaction: "CRM
   // subscription — $79" is exactly as valid as "Photography — 123 Main
   // Street — $175".
   transactionId String?
   transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
-
-  clientId String?
-  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
   contactId String?
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
@@ -1174,7 +1134,6 @@ model Expense {
   @@index([ownerId, taxYear])
   @@index([ownerId, categoryId])
   @@index([transactionId])
-  @@index([clientId])
   @@index([contactId])
   @@map("expenses")
 }
@@ -1202,9 +1161,6 @@ model MileageRecord {
   transactionId String?
   transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
 
-  clientId String?
-  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
-
   contactId String?
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
@@ -1215,7 +1171,6 @@ model MileageRecord {
 
   @@index([ownerId, taxYear])
   @@index([transactionId])
-  @@index([clientId])
   @@index([contactId])
   @@map("mileage_records")
 }

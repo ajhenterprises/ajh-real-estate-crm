@@ -86,16 +86,8 @@ export default async function ShowingsPage(props: PageProps<"/showings">) {
         ) : (
           <div className="flex flex-col divide-y divide-border">
             {showings.map((showing) => {
-              const who = showing.client
-                ? contactDisplayName(showing.client.contact)
-                : showing.contact
-                  ? contactDisplayName(showing.contact)
-                  : "Unassigned";
-              const whoHref = showing.client
-                ? `/clients/${showing.client.id}`
-                : showing.contact
-                  ? `/contacts/${showing.contact.id}`
-                  : `/showings/${showing.id}/edit`;
+              const who = showing.contact ? contactDisplayName(showing.contact) : "Unassigned";
+              const whoHref = showing.contact ? `/contacts/${showing.contact.id}` : `/showings/${showing.id}/edit`;
 
               return (
                 <div key={showing.id} className="flex items-center justify-between gap-4 px-5 py-3">
@@ -116,7 +108,7 @@ export default async function ShowingsPage(props: PageProps<"/showings">) {
                       href={whoHref}
                       className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
                     >
-                      {showing.client ? "View Client" : showing.contact ? "View Contact" : "Assign"}
+                      {showing.contact ? "View Contact" : "Assign"}
                     </Link>
                     {showing.status === "SCHEDULED" ? (
                       <>

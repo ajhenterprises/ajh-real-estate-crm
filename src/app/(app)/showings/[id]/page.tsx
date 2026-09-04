@@ -14,12 +14,8 @@ export default async function ShowingDetailPage(props: PageProps<"/showings/[id]
   const showing = await getShowingById(session.user.id, id);
   if (!showing) notFound();
 
-  const who = showing.client
-    ? contactDisplayName(showing.client.contact)
-    : showing.contact
-      ? contactDisplayName(showing.contact)
-      : null;
-  const whoHref = showing.client ? `/clients/${showing.client.id}` : showing.contact ? `/contacts/${showing.contact.id}` : undefined;
+  const who = showing.contact ? contactDisplayName(showing.contact) : null;
+  const whoHref = showing.contact ? `/contacts/${showing.contact.id}` : undefined;
 
   return (
     <div className="flex flex-col gap-6">
@@ -80,7 +76,7 @@ export default async function ShowingDetailPage(props: PageProps<"/showings/[id]
         <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
           <InfoField label="Status" value={SHOWING_STATUS_LABELS[showing.status]} />
           <InfoField label="Date & time" value={formatDateTimeWithYear(showing.scheduledAt)} />
-          <InfoField label={showing.client ? "Client" : "Contact"} value={who} href={whoHref} />
+          <InfoField label="Contact" value={who} href={whoHref} />
         </div>
         {showing.notes ? (
           <div className="border-t border-border px-5 py-4">

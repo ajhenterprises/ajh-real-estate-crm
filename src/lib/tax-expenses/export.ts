@@ -24,13 +24,11 @@ function toCsvRow(values: (string | number)[]): string {
 
 interface AssociationLike {
   transaction: { propertyAddress: string | null } | null;
-  client: { contact: { firstName: string; lastName: string } } | null;
   contact: { firstName: string; lastName: string } | null;
 }
 
 function associationLabel(record: AssociationLike): string {
   if (record.transaction) return record.transaction.propertyAddress ?? "Transaction";
-  if (record.client) return contactDisplayName(record.client.contact);
   if (record.contact) return contactDisplayName(record.contact);
   return "";
 }
@@ -59,7 +57,7 @@ export function buildExpenseCsv(expenses: ExpenseExportRow[]): string {
     "Business Purpose",
     "Business Use %",
     "Status",
-    "Transaction/Client",
+    "Transaction/Contact",
     "Notes",
   ]);
   const rows = expenses.map((expense) =>
@@ -128,7 +126,7 @@ export interface MileageExportRow extends AssociationLike {
 }
 
 export function buildMileageCsv(records: MileageExportRow[]): string {
-  const header = toCsvRow(["Date", "Start", "Destination", "Purpose", "Miles", "Tax Year", "Transaction/Client", "Notes"]);
+  const header = toCsvRow(["Date", "Start", "Destination", "Purpose", "Miles", "Tax Year", "Transaction/Contact", "Notes"]);
   const rows = records.map((record) =>
     toCsvRow([
       formatDateWithYear(record.date),

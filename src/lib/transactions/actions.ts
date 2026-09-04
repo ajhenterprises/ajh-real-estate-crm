@@ -58,7 +58,7 @@ const transactionFieldsSchema = {
 };
 
 const createTransactionSchema = z.object({
-  clientId: z.string().min(1),
+  contactId: z.string().min(1),
   ...transactionFieldsSchema,
 });
 
@@ -82,24 +82,24 @@ export async function createTransactionAction(
     return { error: parsed.error.issues[0]?.message ?? "Check the form and try again." };
   }
 
-  const { clientId, ...fields } = parsed.data;
+  const { contactId, ...fields } = parsed.data;
 
-  // Never trust a client id from the browser: it must belong to the
+  // Never trust a contact id from the browser: it must belong to the
   // signed-in user, or the transaction is not created.
-  const client = await prisma.client.findFirst({ where: { id: clientId, ownerId: session.user.id } });
-  if (!client) {
-    return { error: "That client could not be found." };
+  const contact = await prisma.contact.findFirst({ where: { id: contactId, ownerId: session.user.id } });
+  if (!contact) {
+    return { error: "That contact could not be found." };
   }
 
   const transaction = await prisma.$transaction(async (tx) => {
     const created = await tx.transaction.create({
-      data: { ...fields, clientId: client.id, ownerId: session.user.id },
+      data: { ...fields, contactId: contact.id, ownerId: session.user.id },
     });
     await generateChecklistForTransaction(tx, created);
     return created;
   });
 
-  revalidatePath(`/clients/${client.id}`);
+  revalidatePath(`/contacts/${contact.id}`);
   revalidatePath("/transactions");
   revalidatePath("/tasks");
   redirect(`/transactions/${transaction.id}`);
@@ -128,7 +128,7 @@ export async function updateTransactionAction(
   await prisma.transaction.update({ where: { id: existing.id }, data: fields });
 
   revalidatePath(`/transactions/${existing.id}`);
-  revalidatePath(`/clients/${existing.clientId}`);
+  revalidatePath(`/contacts/${existing.contactId}`);
   revalidatePath("/transactions");
   redirect(`/transactions/${existing.id}`);
 }

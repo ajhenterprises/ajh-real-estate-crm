@@ -36,7 +36,7 @@ function TaskRow({
     title: string;
     dueDate: Date | null;
     transaction: { propertyAddress: string | null } | null;
-    client: { contact: { firstName: string; lastName: string } } | null;
+    contact: { firstName: string; lastName: string } | null;
   };
 }) {
   return (
@@ -46,7 +46,7 @@ function TaskRow({
         <p className="truncate text-sm text-muted-foreground">
           {task.dueDate ? `Due ${formatDate(task.dueDate)}` : "No due date"} ·{" "}
           {task.transaction?.propertyAddress ??
-            (task.client ? contactDisplayName(task.client.contact) : "General task")}
+            (task.contact ? contactDisplayName(task.contact) : "General task")}
         </p>
       </Link>
       <form action={completeTaskAction} className="shrink-0">
@@ -131,7 +131,7 @@ export default async function DashboardPage() {
                   <p className="text-sm font-medium text-foreground">{event.title}</p>
                   <p className="text-sm text-muted-foreground">
                     {formatDate(event.date)} ·{" "}
-                    {contactDisplayName(event.transaction.client.contact)} —{" "}
+                    {contactDisplayName(event.transaction.contact)} —{" "}
                     {event.transaction.propertyAddress ?? "No address on file"}
                   </p>
                 </div>
@@ -243,7 +243,7 @@ export default async function DashboardPage() {
                   <p className="text-sm font-medium text-foreground">{event.title}</p>
                   <p className="text-sm text-muted-foreground">
                     {formatDate(event.date)} ·{" "}
-                    {contactDisplayName(event.transaction.client.contact)} —{" "}
+                    {contactDisplayName(event.transaction.contact)} —{" "}
                     {event.transaction.propertyAddress ?? "No address on file"}
                   </p>
                 </div>
@@ -282,7 +282,7 @@ export default async function DashboardPage() {
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-foreground">
-                      {contactDisplayName(transaction.client.contact)}
+                      {contactDisplayName(transaction.contact)}
                     </p>
                     <p className="truncate text-sm text-muted-foreground">
                       {transaction.propertyAddress ?? "No address on file"} ·{" "}
@@ -337,7 +337,7 @@ export default async function DashboardPage() {
               >
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-foreground">
-                    {contactDisplayName(transaction.client.contact)}
+                    {contactDisplayName(transaction.contact)}
                   </p>
                   <p className="truncate text-sm text-muted-foreground">
                     {transaction.propertyAddress ?? "No address on file"}

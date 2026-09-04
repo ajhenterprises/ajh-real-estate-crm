@@ -2,7 +2,6 @@ export const primaryNavItems = [
   { href: "/", label: "Dashboard" },
   { href: "/calendar", label: "Calendar" },
   { href: "/contacts", label: "Contacts" },
-  { href: "/clients", label: "Clients" },
   { href: "/showings", label: "Showings" },
   { href: "/transactions", label: "Transactions" },
   { href: "/tasks", label: "Tasks" },

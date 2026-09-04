@@ -214,11 +214,9 @@ export default async function TaxExpensesPage(props: PageProps<"/tax-expenses">)
                 {expenses.map((expense) => {
                   const associationLabel = expense.transaction
                     ? expense.transaction.propertyAddress ?? "Transaction"
-                    : expense.client
-                      ? `${expense.client.contact.firstName} ${expense.client.contact.lastName}`
-                      : expense.contact
-                        ? `${expense.contact.firstName} ${expense.contact.lastName}`
-                        : "—";
+                    : expense.contact
+                      ? `${expense.contact.firstName} ${expense.contact.lastName}`
+                      : "—";
                   const activeReceipts = expense.documents.filter((doc) => doc.status !== "PENDING_DELETION");
 
                   return (

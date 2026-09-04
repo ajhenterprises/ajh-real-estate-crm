@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import type { CreateContactState } from "@/lib/contacts/actions";
 import { Field, FormError, Select, SubmitButton, TextArea, TextInput } from "@/components/ui/form";
-import { CONTACT_TYPE_LABELS } from "@/lib/labels";
+import { CLIENT_TYPE_LABELS, CONTACT_TYPE_LABELS } from "@/lib/labels";
 import { CONTACT_SOURCE_LABELS } from "@/lib/integrations/providers";
 
 export interface ContactFormValues {
@@ -18,6 +18,7 @@ export interface ContactFormValues {
   state?: string;
   zip?: string;
   contactType?: string;
+  clientType?: string;
   source?: string;
   notes?: string;
 }
@@ -84,7 +85,7 @@ export function ContactForm({
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Contact type" htmlFor="contactType">
+        <Field label="Status" htmlFor="contactType">
           <Select id="contactType" name="contactType" defaultValue={defaultValues?.contactType ?? "LEAD"}>
             {Object.entries(CONTACT_TYPE_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
@@ -103,6 +104,17 @@ export function ContactForm({
           </Select>
         </Field>
       </div>
+
+      <Field label="Buyer / Seller" htmlFor="clientType" hint="Optional — only relevant once they're a client">
+        <Select id="clientType" name="clientType" defaultValue={defaultValues?.clientType ?? ""}>
+          <option value="">Not set</option>
+          {Object.entries(CLIENT_TYPE_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </Select>
+      </Field>
 
       <Field label="Notes" htmlFor="notes" hint="Optional">
         <TextArea id="notes" name="notes" rows={3} defaultValue={defaultValues?.notes} />

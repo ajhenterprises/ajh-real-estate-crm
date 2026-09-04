@@ -2,9 +2,9 @@ import "server-only";
 import { prisma } from "@/lib/db";
 
 // Owner-scoped list queries backing section index pages that don't yet
-// have their own filtered/detail repo module. Contacts, Clients,
-// Transactions, and Tasks live in src/lib/repos/contacts.ts, clients.ts,
-// transactions.ts, and tasks.ts respectively.
+// have their own filtered/detail repo module. Contacts, Transactions, and
+// Tasks live in src/lib/repos/contacts.ts, transactions.ts, and tasks.ts
+// respectively.
 
 export function listDocuments(userId: string) {
   return prisma.document.findMany({
@@ -12,10 +12,6 @@ export function listDocuments(userId: string) {
     orderBy: { uploadedAt: "desc" },
     include: {
       transaction: true,
-      client: { include: { contact: true } },
-      // A document attached only to a Contact (never a Client/Transaction)
-      // had no owning-record context to show or link to on the global list
-      // before this — see the Documents-list fix in documents/page.tsx.
       contact: true,
     },
   });

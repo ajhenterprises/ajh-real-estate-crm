@@ -25,7 +25,6 @@ const STATUS_OPTIONS: { value: TaskStatusFilter | ""; label: string }[] = [
 const RELATIONSHIP_OPTIONS: { value: TaskRelationshipFilter | ""; label: string }[] = [
   { value: "", label: "All tasks" },
   { value: "TRANSACTION", label: "Transaction tasks" },
-  { value: "CLIENT", label: "Client tasks" },
   { value: "CONTACT", label: "Contact tasks" },
   { value: "GENERAL", label: "General tasks" },
 ];
@@ -151,11 +150,9 @@ export default async function TasksPage(props: PageProps<"/tasks">) {
                       {TASK_PRIORITY_LABELS[task.priority]}
                       {task.transaction?.propertyAddress
                         ? ` · ${task.transaction.propertyAddress}`
-                        : task.client
-                          ? ` · ${contactDisplayName(task.client.contact)}`
-                          : task.contact
-                            ? ` · ${contactDisplayName(task.contact)}`
-                            : " · General"}
+                        : task.contact
+                          ? ` · ${contactDisplayName(task.contact)}`
+                          : " · General"}
                     </p>
                   </Link>
                   {task.status === "PENDING" ? (

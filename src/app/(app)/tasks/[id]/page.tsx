@@ -89,11 +89,6 @@ export default async function TaskDetailPage(props: PageProps<"/tasks/[id]">) {
             href={task.contact ? `/contacts/${task.contact.id}` : undefined}
           />
           <InfoField
-            label="Client"
-            value={task.client ? contactDisplayName(task.client.contact) : null}
-            href={task.client ? `/clients/${task.client.id}` : undefined}
-          />
-          <InfoField
             label="Transaction"
             value={task.transaction?.propertyAddress ?? (task.transaction ? "Transaction" : null)}
             href={task.transaction ? `/transactions/${task.transaction.id}` : undefined}

@@ -55,7 +55,6 @@ export function listExpenses(userId: string, filters: ExpenseListFilters = {}, d
     include: {
       category: true,
       transaction: { select: { id: true, propertyAddress: true } },
-      client: { include: { contact: true } },
       contact: true,
       documents: { select: { id: true, filename: true, status: true } },
     },
@@ -68,7 +67,6 @@ export function getExpenseById(userId: string, expenseId: string, db: Prisma.Tra
     include: {
       category: true,
       transaction: { select: { id: true, propertyAddress: true } },
-      client: { include: { contact: true } },
       contact: true,
       documents: true,
     },
@@ -120,7 +118,6 @@ export function listMileageRecords(
     orderBy: mileageOrderBy(sort),
     include: {
       transaction: { select: { id: true, propertyAddress: true } },
-      client: { include: { contact: true } },
       contact: true,
     },
   });

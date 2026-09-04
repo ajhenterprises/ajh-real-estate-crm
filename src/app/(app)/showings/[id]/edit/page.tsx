@@ -40,7 +40,6 @@ export default async function EditShowingPage(props: PageProps<"/showings/[id]/e
             status: showing.status,
             notes: showing.notes ?? undefined,
             contactId: showing.contactId ?? undefined,
-            clientId: showing.clientId ?? undefined,
           }}
         />
       </Card>

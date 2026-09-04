@@ -78,14 +78,14 @@ export default async function TransactionDetailPage(props: PageProps<"/transacti
             <Link href="/transactions" className="hover:text-foreground">
               Transactions
             </Link>{" "}
-            / {transaction.propertyAddress ?? contactDisplayName(transaction.client.contact)}
+            / {transaction.propertyAddress ?? contactDisplayName(transaction.contact)}
           </p>
           <h1 className="mt-1 text-2xl font-semibold text-foreground">
             {transaction.propertyAddress ?? "No address on file"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            <Link href={`/clients/${transaction.clientId}`} className="hover:text-foreground">
-              {contactDisplayName(transaction.client.contact)}
+            <Link href={`/contacts/${transaction.contactId}`} className="hover:text-foreground">
+              {contactDisplayName(transaction.contact)}
             </Link>{" "}
             · {TRANSACTION_TYPE_LABELS[transaction.type]} · {TRANSACTION_STATUS_LABELS[transaction.status]}
             {transaction.expectedClosingDate && ` · Closing ${formatDate(transaction.expectedClosingDate)}`}

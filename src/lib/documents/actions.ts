@@ -84,7 +84,7 @@ export async function uploadDocumentAction(
       fileSize: file.size,
       mimeType: file.type,
       transactionId: transaction.id,
-      clientId: transaction.clientId,
+      contactId: transaction.contactId,
       uploadedByUserId: session.user.id,
     },
   });

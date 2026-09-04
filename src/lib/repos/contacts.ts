@@ -7,8 +7,11 @@
 // contacts/[id]/page.tsx, and contacts/actions.ts.
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
-import type { ContactType } from "@/generated/prisma/enums";
+import type { ClientType, ContactType, TransactionStatus } from "@/generated/prisma/enums";
 import { endOfTodayUTC } from "@/lib/format";
+
+const ACTIVE_TRANSACTION_STATUSES: TransactionStatus[] = ["PROSPECT", "ACTIVE", "UNDER_CONTRACT", "PENDING"];
+const CLOSED_TRANSACTION_STATUSES: TransactionStatus[] = ["CLOSED", "CANCELLED"];
 
 // Every query here is scoped to `ownerId` for the current session user —
 // a contact id alone (however it reaches the server) is never sufficient
@@ -20,7 +23,8 @@ export type ContactFollowUpFilter = "needs" | "none";
 
 export interface ContactListFilters {
   search?: string;
-  type?: ContactType;
+  contactType?: ContactType;
+  clientType?: ClientType;
   followUp?: ContactFollowUpFilter;
   sort?: ContactSort;
 }
@@ -48,12 +52,13 @@ export function listContacts(
   filters: ContactListFilters = {},
   db: Prisma.TransactionClient = prisma,
 ) {
-  const { search, type, followUp, sort } = filters;
+  const { search, contactType, clientType, followUp, sort } = filters;
 
   return db.contact.findMany({
     where: {
       ownerId: userId,
-      ...(type ? { contactType: type } : {}),
+      ...(contactType ? { contactType } : {}),
+      ...(clientType ? { clientType } : {}),
       ...(followUp === "needs"
         ? { nextFollowUpDate: { lt: endOfTodayUTC() } }
         : followUp === "none"
@@ -71,33 +76,32 @@ export function listContacts(
         : {}),
     },
     orderBy: contactOrderBy(sort),
-    include: { client: true },
+    include: {
+      transactions: {
+        select: { id: true, status: true, createdAt: true, propertyAddress: true },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
+    },
   });
 }
 
-/**
- * Showings are fetched separately rather than as a nested `include` because
- * a contact who is also a client should see showings booked either way —
- * from their Contact page (contactId set) or from their Client page
- * (clientId set) — and Prisma's nested-include `where` can't express an OR
- * across a sibling relation's id. See getClientById below for the mirror
- * image of this same fix.
- */
 export async function getContactById(userId: string, contactId: string, db: Prisma.TransactionClient = prisma) {
-  const contact = await db.contact.findFirst({
+  return db.contact.findFirst({
     where: { id: contactId, ownerId: userId },
     include: {
-      client: {
-        include: {
-          transactions: {
-            orderBy: { createdAt: "desc" },
-            take: 5,
-          },
-        },
+      transactions: {
+        where: { status: { in: ACTIVE_TRANSACTION_STATUSES } },
+        orderBy: { createdAt: "desc" },
       },
       tasks: {
         where: { status: "PENDING" },
         orderBy: { dueDate: "asc" },
+        take: 10,
+      },
+      showings: {
+        where: { status: "SCHEDULED" },
+        orderBy: { scheduledAt: "asc" },
         take: 10,
       },
       activities: {
@@ -106,16 +110,11 @@ export async function getContactById(userId: string, contactId: string, db: Pris
       },
     },
   });
-  if (!contact) return null;
+}
 
-  const showings = await db.showing.findMany({
-    where: {
-      status: "SCHEDULED",
-      OR: [{ contactId: contact.id }, ...(contact.client ? [{ clientId: contact.client.id }] : [])],
-    },
-    orderBy: { scheduledAt: "asc" },
-    take: 10,
+export function getClosedTransactionsForContact(userId: string, contactId: string) {
+  return prisma.transaction.findMany({
+    where: { contactId, ownerId: userId, status: { in: CLOSED_TRANSACTION_STATUSES } },
+    orderBy: { actualClosingDate: "desc" },
   });
-
-  return { ...contact, showings };
 }

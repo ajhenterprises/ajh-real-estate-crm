@@ -51,8 +51,8 @@ export async function getDashboardSummary(userId: string) {
         date: { gte: startOfToday },
       },
     }),
-    prisma.client.count({
-      where: { ownerId: userId, status: "ACTIVE" },
+    prisma.contact.count({
+      where: { ownerId: userId, contactType: "ACTIVE_CLIENT" },
     }),
     prisma.task.count({
       where: { assignedUserId: userId, status: "PENDING", dueDate: { lt: startOfToday } },
@@ -74,7 +74,7 @@ export async function getOverdueTasks(userId: string) {
   return prisma.task.findMany({
     where: { assignedUserId: userId, status: "PENDING", dueDate: { lt: startOfTodayUTC() } },
     orderBy: { dueDate: "asc" },
-    include: { transaction: true, client: { include: { contact: true } } },
+    include: { transaction: true, contact: true },
     take: 10,
   });
 }
@@ -87,7 +87,7 @@ export async function getOverdueDeadlines(userId: string) {
       date: { lt: startOfTodayUTC() },
     },
     orderBy: { date: "asc" },
-    include: { transaction: { include: { client: { include: { contact: true } } } } },
+    include: { transaction: { include: { contact: true } } },
     take: 10,
   });
 }
@@ -100,7 +100,7 @@ export async function getTasksDueToday(userId: string) {
       dueDate: { gte: startOfTodayUTC(), lt: endOfTodayUTC() },
     },
     orderBy: { priority: "desc" },
-    include: { transaction: true, client: { include: { contact: true } } },
+    include: { transaction: true, contact: true },
   });
 }
 
@@ -112,7 +112,7 @@ export async function getUpcomingTasks(userId: string) {
       dueDate: { gte: endOfTodayUTC() },
     },
     orderBy: { dueDate: "asc" },
-    include: { transaction: true, client: { include: { contact: true } } },
+    include: { transaction: true, contact: true },
     take: 8,
   });
 }
@@ -125,7 +125,7 @@ export async function getUpcomingDeadlines(userId: string) {
       date: { gte: startOfTodayUTC() },
     },
     orderBy: { date: "asc" },
-    include: { transaction: { include: { client: { include: { contact: true } } } } },
+    include: { transaction: { include: { contact: true } } },
     take: 8,
   });
 }
@@ -138,7 +138,7 @@ export async function getUpcomingClosings(userId: string) {
       expectedClosingDate: { gte: startOfTodayUTC() },
     },
     orderBy: { expectedClosingDate: "asc" },
-    include: { client: { include: { contact: true } } },
+    include: { contact: true },
     take: 8,
   });
 }
@@ -148,7 +148,7 @@ export async function getActiveTransactions(userId: string) {
     where: { ownerId: userId, status: { in: ["ACTIVE", "UNDER_CONTRACT", "PENDING"] } },
     orderBy: { expectedClosingDate: "asc" },
     include: {
-      client: { include: { contact: true } },
+      contact: true,
       events: { where: { status: "PENDING" }, orderBy: { date: "asc" }, take: 1 },
       tasks: { select: { status: true, dueDate: true } },
     },

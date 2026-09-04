@@ -33,11 +33,9 @@ export default async function DocumentsPage() {
             {documents.map((document) => {
               const owner = document.transaction
                 ? { label: document.transaction.propertyAddress ?? "Transaction", href: `/transactions/${document.transaction.id}` }
-                : document.client
-                  ? { label: contactDisplayName(document.client.contact), href: `/clients/${document.client.id}` }
-                  : document.contact
-                    ? { label: contactDisplayName(document.contact), href: `/contacts/${document.contact.id}` }
-                    : null;
+                : document.contact
+                  ? { label: contactDisplayName(document.contact), href: `/contacts/${document.contact.id}` }
+                  : null;
 
               return (
                 <div

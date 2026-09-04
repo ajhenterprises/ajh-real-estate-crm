@@ -27,7 +27,7 @@ async function setTaskStatus(taskId: string, status: "PENDING" | "COMPLETED" | "
   revalidatePath("/");
   revalidatePath("/tasks");
   revalidatePath("/transactions", "layout");
-  revalidatePath("/clients", "layout");
+  revalidatePath("/contacts", "layout");
 }
 
 export async function completeTaskAction(formData: FormData) {
@@ -69,7 +69,6 @@ const taskFieldsSchema = {
   priority: z.enum(TASK_PRIORITIES),
   status: z.enum(TASK_STATUSES),
   contactId: optionalString,
-  clientId: optionalString,
   transactionId: optionalString,
 };
 
@@ -80,22 +79,15 @@ export interface TaskFormState {
   error?: string;
 }
 
-/** Verifies contactId/clientId/transactionId (if provided) belong to this user; returns them narrowed to string | null. */
+/** Verifies contactId/transactionId (if provided) belong to this user; returns them narrowed to string | null. */
 async function resolveOwnedRelations(
   userId: string,
   contactId: string | undefined,
-  clientId: string | undefined,
   transactionId: string | undefined,
-): Promise<
-  { contactId: string | null; clientId: string | null; transactionId: string | null } | { error: string }
-> {
+): Promise<{ contactId: string | null; transactionId: string | null } | { error: string }> {
   if (contactId) {
     const contact = await prisma.contact.findFirst({ where: { id: contactId, ownerId: userId } });
     if (!contact) return { error: "That contact could not be found." };
-  }
-  if (clientId) {
-    const client = await prisma.client.findFirst({ where: { id: clientId, ownerId: userId } });
-    if (!client) return { error: "That client could not be found." };
   }
   if (transactionId) {
     const transaction = await prisma.transaction.findFirst({
@@ -103,7 +95,7 @@ async function resolveOwnedRelations(
     });
     if (!transaction) return { error: "That transaction could not be found." };
   }
-  return { contactId: contactId ?? null, clientId: clientId ?? null, transactionId: transactionId ?? null };
+  return { contactId: contactId ?? null, transactionId: transactionId ?? null };
 }
 
 export async function createTaskAction(
@@ -117,8 +109,8 @@ export async function createTaskAction(
     return { error: parsed.error.issues[0]?.message ?? "Check the form and try again." };
   }
 
-  const { contactId, clientId, transactionId, ...fields } = parsed.data;
-  const relations = await resolveOwnedRelations(session.user.id, contactId, clientId, transactionId);
+  const { contactId, transactionId, ...fields } = parsed.data;
+  const relations = await resolveOwnedRelations(session.user.id, contactId, transactionId);
   if ("error" in relations) return relations;
 
   const task = await prisma.task.create({
@@ -128,7 +120,6 @@ export async function createTaskAction(
       source: "MANUAL",
       assignedUserId: session.user.id,
       contactId: relations.contactId,
-      clientId: relations.clientId,
       transactionId: relations.transactionId,
     },
   });
@@ -136,7 +127,6 @@ export async function createTaskAction(
   revalidatePath("/tasks");
   revalidatePath("/");
   if (relations.transactionId) revalidatePath(`/transactions/${relations.transactionId}`);
-  if (relations.clientId) revalidatePath(`/clients/${relations.clientId}`);
   if (relations.contactId) revalidatePath(`/contacts/${relations.contactId}`);
   redirect(`/tasks/${task.id}`);
 }
@@ -152,14 +142,14 @@ export async function updateTaskAction(
     return { error: parsed.error.issues[0]?.message ?? "Check the form and try again." };
   }
 
-  const { taskId, contactId, clientId, transactionId, ...fields } = parsed.data;
+  const { taskId, contactId, transactionId, ...fields } = parsed.data;
 
   const existing = await prisma.task.findFirst({ where: { id: taskId, assignedUserId: session.user.id } });
   if (!existing) {
     return { error: "That task could not be found." };
   }
 
-  const relations = await resolveOwnedRelations(session.user.id, contactId, clientId, transactionId);
+  const relations = await resolveOwnedRelations(session.user.id, contactId, transactionId);
   if ("error" in relations) return relations;
 
   const completedDate =
@@ -174,7 +164,6 @@ export async function updateTaskAction(
       completedDate,
       isOverridden,
       contactId: relations.contactId,
-      clientId: relations.clientId,
       transactionId: relations.transactionId,
     },
   });
@@ -184,8 +173,6 @@ export async function updateTaskAction(
   revalidatePath("/");
   if (existing.transactionId) revalidatePath(`/transactions/${existing.transactionId}`);
   if (relations.transactionId) revalidatePath(`/transactions/${relations.transactionId}`);
-  if (existing.clientId) revalidatePath(`/clients/${existing.clientId}`);
-  if (relations.clientId) revalidatePath(`/clients/${relations.clientId}`);
   if (existing.contactId) revalidatePath(`/contacts/${existing.contactId}`);
   if (relations.contactId) revalidatePath(`/contacts/${relations.contactId}`);
   redirect(`/tasks/${existing.id}`);

@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
-import { getContactById } from "@/lib/repos/contacts";
-import { convertToClientAction, deleteContactAction } from "@/lib/contacts/actions";
+import { getClosedTransactionsForContact, getContactById } from "@/lib/repos/contacts";
+import { deleteContactAction } from "@/lib/contacts/actions";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Select } from "@/components/ui/form";
 import { DeleteButton } from "@/components/ui/delete-button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { FollowUpForm } from "@/components/contacts/follow-up-form";
@@ -13,12 +12,19 @@ import { LogActivityForm } from "@/components/contacts/log-activity-form";
 import { AddShowingForm } from "@/components/showings/add-showing-form";
 import {
   contactDisplayName,
+  formatDate,
   formatDateTimeWithYear,
   formatDateWithYear,
   toDateInputValue,
   toTimeInputValue,
 } from "@/lib/format";
-import { CONTACT_TYPE_LABELS, CLIENT_TYPE_LABELS, TRANSACTION_STATUS_LABELS, CONTACT_ACTIVITY_TYPE_LABELS } from "@/lib/labels";
+import {
+  CLIENT_CONTACT_TYPES,
+  CLIENT_TYPE_LABELS,
+  CONTACT_TYPE_LABELS,
+  TRANSACTION_STATUS_LABELS,
+  CONTACT_ACTIVITY_TYPE_LABELS,
+} from "@/lib/labels";
 import { CONTACT_SOURCE_LABELS } from "@/lib/integrations/providers";
 import { deriveFollowUpStatus } from "@/lib/status";
 import { getLastContactedActivity } from "@/lib/contacts/activity";
@@ -30,8 +36,12 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
   const contact = await getContactById(session.user.id, id);
   if (!contact) notFound();
 
+  const closedTransactions = await getClosedTransactionsForContact(session.user.id, contact.id);
+
   const followUpStatus = deriveFollowUpStatus(contact.nextFollowUpDate);
   const lastContacted = getLastContactedActivity(contact.activities);
+  const isClient = CLIENT_CONTACT_TYPES.includes(contact.contactType);
+  const canDelete = contact.transactions.length === 0 && closedTransactions.length === 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -45,8 +55,15 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
           </p>
           <div className="mt-1 flex items-center gap-3">
             <h1 className="text-2xl font-semibold text-foreground">{contactDisplayName(contact)}</h1>
-            <span className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                contact.contactType === "ACTIVE_CLIENT"
+                  ? "bg-status-ontrack-bg text-status-ontrack"
+                  : "bg-surface-muted text-muted-foreground"
+              }`}
+            >
               {CONTACT_TYPE_LABELS[contact.contactType]}
+              {isClient && contact.clientType ? ` · ${CLIENT_TYPE_LABELS[contact.clientType]}` : ""}
             </span>
             {followUpStatus === "overdue" || followUpStatus === "due-today" ? (
               <StatusBadge
@@ -62,12 +79,20 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
               : " · Not contacted yet"}
           </p>
         </div>
-        <Link
-          href={`/contacts/${contact.id}/edit`}
-          className="shrink-0 rounded-md border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-surface-muted"
-        >
-          Edit
-        </Link>
+        <div className="flex shrink-0 gap-2">
+          <Link
+            href={`/contacts/${contact.id}/edit`}
+            className="rounded-md border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-surface-muted"
+          >
+            Edit
+          </Link>
+          <Link
+            href={`/contacts/${contact.id}/transactions/new`}
+            className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            New Transaction
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -96,51 +121,75 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
           </Card>
 
           <Card>
-            <CardHeader title="Tasks" />
-            {contact.tasks.length === 0 ? (
+            <CardHeader title="Active Transactions" />
+            {contact.transactions.length === 0 ? (
               <div className="p-5">
                 <EmptyState
-                  title="No open tasks"
-                  description="Tasks tied to this contact will show up here."
+                  title="No active transactions"
+                  description="Start a transaction for this contact and it will show up here."
                 />
               </div>
             ) : (
               <div className="flex flex-col divide-y divide-border">
-                {contact.tasks.map((task) => (
-                  <div key={task.id} className="px-5 py-3">
-                    <p className="text-sm font-medium text-foreground">{task.title}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {task.dueDate ? `Due ${formatDateWithYear(task.dueDate)}` : "No due date"}
-                    </p>
-                  </div>
+                {contact.transactions.map((transaction) => (
+                  <Link
+                    key={transaction.id}
+                    href={`/transactions/${transaction.id}`}
+                    className="flex items-center justify-between px-5 py-3 hover:bg-surface-muted"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {transaction.propertyAddress ?? "No address on file"}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {transaction.expectedClosingDate
+                          ? `Closing ${formatDate(transaction.expectedClosingDate)}`
+                          : "No closing date set"}
+                      </p>
+                    </div>
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {TRANSACTION_STATUS_LABELS[transaction.status]}
+                    </span>
+                  </Link>
                 ))}
               </div>
             )}
           </Card>
 
           <Card>
-            <CardHeader title="Showings" />
-            {contact.showings.length === 0 ? (
+            <CardHeader title="Previous Transactions" />
+            {closedTransactions.length === 0 ? (
               <div className="p-5">
-                <EmptyState title="No showings scheduled" description="Schedule one below." />
+                <EmptyState
+                  title="No closed transactions yet"
+                  description="Closed and cancelled transactions for this contact will appear here."
+                />
               </div>
             ) : (
               <div className="flex flex-col divide-y divide-border">
-                {contact.showings.map((showing) => (
+                {closedTransactions.map((transaction) => (
                   <Link
-                    key={showing.id}
-                    href={`/showings/${showing.id}`}
-                    className="block px-5 py-3 hover:bg-surface-muted"
+                    key={transaction.id}
+                    href={`/transactions/${transaction.id}`}
+                    className="flex items-center justify-between px-5 py-3 hover:bg-surface-muted"
                   >
-                    <p className="text-sm font-medium text-foreground">{showing.propertyAddress}</p>
-                    <p className="text-sm text-muted-foreground">{formatDateTimeWithYear(showing.scheduledAt)}</p>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {transaction.propertyAddress ?? "No address on file"}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {transaction.actualClosingDate
+                          ? `Closed ${formatDateWithYear(transaction.actualClosingDate)}`
+                          : "No closing date recorded"}
+                      </p>
+                    </div>
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {TRANSACTION_STATUS_LABELS[transaction.status]}
+                    </span>
                   </Link>
                 ))}
               </div>
             )}
-            <div className="border-t border-border">
-              <AddShowingForm contactId={contact.id} />
-            </div>
           </Card>
 
           <Card>
@@ -187,64 +236,51 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
           </Card>
 
           <Card>
-            <CardHeader title="Client Status" />
-            <div className="p-5">
-              {contact.client ? (
-                <div className="flex flex-col gap-3">
-                  <p className="text-sm text-foreground">
-                    Already a client — {CLIENT_TYPE_LABELS[contact.client.type]}
-                  </p>
+            <CardHeader title="Tasks" />
+            {contact.tasks.length === 0 ? (
+              <div className="p-5">
+                <EmptyState title="No open tasks" description="Tasks tied to this contact will show up here." />
+              </div>
+            ) : (
+              <div className="flex flex-col divide-y divide-border">
+                {contact.tasks.map((task) => (
+                  <div key={task.id} className="px-5 py-3">
+                    <p className="text-sm font-medium text-foreground">{task.title}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {task.dueDate ? `Due ${formatDateWithYear(task.dueDate)}` : "No due date"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Showings" />
+            {contact.showings.length === 0 ? (
+              <div className="p-5">
+                <EmptyState title="No showings scheduled" description="Schedule one below." />
+              </div>
+            ) : (
+              <div className="flex flex-col divide-y divide-border">
+                {contact.showings.map((showing) => (
                   <Link
-                    href={`/clients/${contact.client.id}`}
-                    className="rounded-md border border-border px-3 py-2 text-center text-sm font-medium text-foreground hover:bg-surface-muted"
+                    key={showing.id}
+                    href={`/showings/${showing.id}`}
+                    className="block px-5 py-3 hover:bg-surface-muted"
                   >
-                    View Client
+                    <p className="text-sm font-medium text-foreground">{showing.propertyAddress}</p>
+                    <p className="text-sm text-muted-foreground">{formatDateTimeWithYear(showing.scheduledAt)}</p>
                   </Link>
-                  {contact.client.transactions.length > 0 ? (
-                    <div className="mt-2 flex flex-col gap-2 border-t border-border pt-3">
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Recent transactions
-                      </p>
-                      {contact.client.transactions.map((transaction) => (
-                        <Link
-                          key={transaction.id}
-                          href={`/transactions/${transaction.id}`}
-                          className="text-sm text-foreground hover:text-accent"
-                        >
-                          {transaction.propertyAddress ?? "No address on file"} ·{" "}
-                          <span className="text-muted-foreground">
-                            {TRANSACTION_STATUS_LABELS[transaction.status]}
-                          </span>
-                        </Link>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <form action={convertToClientAction} className="flex flex-col gap-3">
-                  <input type="hidden" name="contactId" value={contact.id} />
-                  <p className="text-sm text-muted-foreground">
-                    Turn this contact into a client to start tracking transactions for them.
-                  </p>
-                  <Select name="type" defaultValue="BUYER" required aria-label="Client type">
-                    {Object.entries(CLIENT_TYPE_LABELS).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </Select>
-                  <button
-                    type="submit"
-                    className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
-                  >
-                    Convert to Client
-                  </button>
-                </form>
-              )}
+                ))}
+              </div>
+            )}
+            <div className="border-t border-border">
+              <AddShowingForm contactId={contact.id} />
             </div>
           </Card>
 
-          {contact.client ? null : (
+          {canDelete ? (
             <Card>
               <CardHeader title="Delete Contact" />
               <div className="p-5">
@@ -256,7 +292,7 @@ export default async function ContactDetailPage(props: PageProps<"/contacts/[id]
                 />
               </div>
             </Card>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

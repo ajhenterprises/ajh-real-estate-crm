@@ -28,17 +28,9 @@ interface OptionalAssociations {
 
 /**
  * Every non-empty association id must belong to the same user — never
- * trust an id from a form directly. Only transactionId/contactId are
+ * trust an id from a form directly. transactionId/contactId are
  * form-driven (create/update always write both, even to clear them —
- * see createExpense/updateExpense below). clientId stays in the schema,
- * matching Document's transactionId/clientId/contactId pattern for
- * consistency and future flexibility, but no form in this feature
- * collects it: writing `clientId: undefined` on every update if a form
- * field existed for it without always resubmitting the current value
- * would silently clear whatever was already there, so simpler and safer
- * to leave it schema-only for now than expose a third dropdown a fast
- * expense-entry form doesn't need — Contact already covers "who this
- * relates to."
+ * see createExpense/updateExpense below).
  */
 async function associationsBelongToUser(
   db: Prisma.TransactionClient,

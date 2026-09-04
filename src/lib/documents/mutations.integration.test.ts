@@ -73,8 +73,7 @@ describe.skipIf(!hasTestDatabase)("document deletion/retention lifecycle (integr
   async function createTransactionDocument(ownerId: string, opts: { documentType?: "OTHER" | "CONTRACT" } = {}) {
     const db = getTestDb();
     const contact = await createTestContact(ownerId);
-    const client = await db.client.create({ data: { contactId: contact.id, ownerId, type: "BUYER" } });
-    const transaction = await db.transaction.create({ data: { clientId: client.id, ownerId, type: "BUYER" } });
+    const transaction = await db.transaction.create({ data: { contactId: contact.id, ownerId, type: "BUYER" } });
     const key = `transactions/${transaction.id}/${Math.random().toString(36).slice(2)}.pdf`;
     const filePath = await writeFixtureFile(key);
 
@@ -445,7 +444,7 @@ describe.skipIf(!hasTestDatabase)("document deletion/retention lifecycle (integr
       expect(row?.status).toBe("UPLOADED");
     });
 
-    it("finds a document owned only through its expense association — no transaction/client/contact link needed", async () => {
+    it("finds a document owned only through its expense association — no transaction/contact link needed", async () => {
       // This is the "CRM subscription — $79" case: a general business
       // expense with no transaction, so its receipt's only ownership path
       // is through the expense itself. documentOwnershipFilter must cover
