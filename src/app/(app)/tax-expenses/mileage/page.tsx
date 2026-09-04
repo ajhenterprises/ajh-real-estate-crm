@@ -104,58 +104,36 @@ export default async function MileagePage(props: PageProps<"/tax-expenses/mileag
             <EmptyState title="No mileage recorded" description={`No mileage recorded for ${year} yet.`} />
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <th className="px-5 py-2.5">Date</th>
-                  <th className="px-5 py-2.5">Start</th>
-                  <th className="px-5 py-2.5">Destination</th>
-                  <th className="px-5 py-2.5">Purpose</th>
-                  <th className="px-5 py-2.5">Miles</th>
-                  <th className="px-5 py-2.5">Transaction</th>
-                  <th className="px-5 py-2.5">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {records.map((record) => {
-                  const associationLabel = record.transaction
-                    ? record.transaction.propertyAddress ?? "Transaction"
-                    : record.contact
-                      ? `${record.contact.firstName} ${record.contact.lastName}`
-                      : "—";
-                  return (
-                    <tr key={record.id}>
-                      <td className="px-5 py-2.5 whitespace-nowrap text-foreground">{formatDateWithYear(record.date)}</td>
-                      <td className="px-5 py-2.5 text-foreground">{record.startLocation}</td>
-                      <td className="px-5 py-2.5 text-foreground">{record.destination}</td>
-                      <td className="px-5 py-2.5 text-muted-foreground">{record.businessPurpose}</td>
-                      <td className="px-5 py-2.5 whitespace-nowrap text-foreground">{record.miles.toString()}</td>
-                      <td className="px-5 py-2.5 text-muted-foreground">{associationLabel}</td>
-                      <td className="px-5 py-2.5">
-                        <div className="flex flex-wrap gap-2">
-                          <Link
-                            href={`/tax-expenses/mileage/${record.id}/edit`}
-                            className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-muted"
-                          >
-                            Edit
-                          </Link>
-                          <form action={deleteMileageAction}>
-                            <input type="hidden" name="mileageRecordId" value={record.id} />
-                            <button
-                              type="submit"
-                              className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-status-attention hover:bg-surface-muted"
-                            >
-                              Delete
-                            </button>
-                          </form>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="flex flex-col divide-y divide-border">
+            {records.map((record) => {
+              const associationLabel = record.transaction
+                ? record.transaction.propertyAddress ?? "Transaction"
+                : record.contact
+                  ? `${record.contact.firstName} ${record.contact.lastName}`
+                  : null;
+              return (
+                <div key={record.id} className="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <Link href={`/tax-expenses/mileage/${record.id}/edit`} className="min-w-0 flex-1 hover:opacity-80">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {record.startLocation} → {record.destination}
+                    </p>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {formatDateWithYear(record.date)} · {record.businessPurpose} · {record.miles.toString()} mi
+                      {associationLabel ? ` · ${associationLabel}` : ""}
+                    </p>
+                  </Link>
+                  <form action={deleteMileageAction} className="shrink-0">
+                    <input type="hidden" name="mileageRecordId" value={record.id} />
+                    <button
+                      type="submit"
+                      className="rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-status-attention hover:bg-surface-muted"
+                    >
+                      Delete
+                    </button>
+                  </form>
+                </div>
+              );
+            })}
           </div>
         )}
       </Card>

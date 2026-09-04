@@ -121,7 +121,11 @@ export default async function CalendarPage(props: PageProps<"/calendar">) {
         </div>
       </div>
 
-      <Card>
+      {/* Month grid: fine on a tablet/desktop-width screen, but a 7-column
+          grid on a ~370px phone leaves each day too narrow to show
+          anything readable — so phones get an agenda list instead (below),
+          not a shrunk copy of this same grid. */}
+      <Card className="hidden sm:block">
         <div className="grid grid-cols-7 border-b border-border">
           {WEEKDAY_LABELS.map((label) => (
             <div key={label} className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -179,6 +183,57 @@ export default async function CalendarPage(props: PageProps<"/calendar">) {
               </div>
             );
           })}
+        </div>
+      </Card>
+
+      <Card className="sm:hidden">
+        <div className="flex flex-col divide-y divide-border">
+          {gridDays
+            .filter(({ inMonth }) => inMonth)
+            .map(({ date }) => {
+              const key = dayKeyUTC(date);
+              const items = itemsByDay.get(key) ?? [];
+              const isToday = key === todayKey;
+              if (items.length === 0 && !isToday) return null;
+
+              return (
+                <div key={key} className="flex gap-3 px-4 py-3">
+                  <div className="flex shrink-0 flex-col items-center pt-0.5">
+                    <span
+                      className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
+                        isToday ? "bg-accent text-accent-foreground" : "text-foreground"
+                      }`}
+                    >
+                      {date.getUTCDate()}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {WEEKDAY_LABELS[date.getUTCDay()]}
+                    </span>
+                  </div>
+                  <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
+                    {items.length === 0 ? (
+                      <span className="text-sm text-muted-foreground">Nothing scheduled</span>
+                    ) : (
+                      items.map((item) => (
+                        <Link
+                          key={`${item.kind}-${item.id}`}
+                          href={itemHref(item)}
+                          className={`block truncate rounded px-2 py-1 text-sm font-medium hover:opacity-80 ${
+                            item.kind === "task"
+                              ? "bg-status-upcoming-bg text-status-upcoming"
+                              : item.kind === "showing"
+                                ? "bg-status-ontrack-bg text-status-ontrack"
+                                : "bg-status-attention-bg text-status-attention"
+                          }`}
+                        >
+                          {itemLabel(item)}
+                        </Link>
+                      ))
+                    )}
+                  </div>
+                </div>
+              );
+            })}
         </div>
       </Card>
 

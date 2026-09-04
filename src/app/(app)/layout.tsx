@@ -22,7 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         } as React.CSSProperties
       }
     >
-      <aside className="flex w-56 flex-col border-r border-border bg-surface">
+      <aside className="hidden w-56 flex-col border-r border-border bg-surface lg:flex">
         <div className="flex h-24 items-center gap-2 border-b border-border px-4">
           {brand.logoStoragePath ? (
             <img
@@ -36,9 +36,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
         <SidebarNav />
       </aside>
-      <div className="flex flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <Header userName={session.user.name ?? session.user.email ?? "Agent"} companyName={companyName} />
-        <main className="flex-1 bg-background px-8 py-8">{children}</main>
+        <main className="flex-1 overflow-x-hidden bg-background px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+          {children}
+        </main>
       </div>
     </div>
   );

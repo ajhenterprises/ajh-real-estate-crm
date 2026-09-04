@@ -21,7 +21,7 @@ export default async function TaskDetailPage(props: PageProps<"/tasks/[id]">) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-sm text-muted-foreground">
             <Link href="/tasks" className="hover:text-foreground">
