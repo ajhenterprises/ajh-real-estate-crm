@@ -15,6 +15,19 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "20mb",
     },
   },
+  async headers() {
+    return [
+      {
+        // Service workers must be re-checked on every load (the spec
+        // requires this regardless of headers, but an aggressively cached
+        // response can still delay browsers noticing a new one is
+        // available) — explicit no-cache keeps PWA updates rolling out
+        // promptly instead of agents getting stuck on a stale version.
+        source: "/sw.js",
+        headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
