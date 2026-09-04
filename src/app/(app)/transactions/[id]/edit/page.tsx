@@ -42,6 +42,7 @@ export default async function EditTransactionPage(props: PageProps<"/transaction
             mlsNumber: transaction.mlsNumber ?? undefined,
             listingPrice: transaction.listingPrice?.toString(),
             purchasePrice: transaction.purchasePrice?.toString(),
+            commissionAmount: transaction.commissionAmount?.toString(),
             contractEffectiveDate: toDateInputValue(transaction.contractEffectiveDate),
             expectedClosingDate: toDateInputValue(transaction.expectedClosingDate),
             actualClosingDate: toDateInputValue(transaction.actualClosingDate),

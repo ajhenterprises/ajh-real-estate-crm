@@ -9,6 +9,7 @@ import {
   getTasksDueToday,
   getUpcomingClosings,
   getUpcomingDeadlines,
+  getUpcomingShowings,
   getUpcomingTasks,
 } from "@/lib/repos/dashboard";
 import { summarizeTaskProgress } from "@/lib/tasks/progress";
@@ -16,7 +17,13 @@ import { Card, CardHeader, StatTile } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { completeTaskAction } from "@/lib/tasks/actions";
-import { contactDisplayName, formatCurrency, formatDate, formatDateWithOptionalTime } from "@/lib/format";
+import {
+  contactDisplayName,
+  formatCurrency,
+  formatDate,
+  formatDateTimeWithYear,
+  formatDateWithOptionalTime,
+} from "@/lib/format";
 import { deriveDeadlineStatus, deriveFollowUpStatus } from "@/lib/status";
 import { CONTACT_TYPE_LABELS } from "@/lib/labels";
 import { Greeting } from "@/components/dashboard/greeting";
@@ -75,6 +82,7 @@ export default async function DashboardPage() {
     upcomingDeadlines,
     activeTransactions,
     upcomingClosings,
+    upcomingShowings,
     contactsNeedingFollowUp,
   ] = await Promise.all([
     getDashboardSummary(userId),
@@ -85,6 +93,7 @@ export default async function DashboardPage() {
     getUpcomingDeadlines(userId),
     getActiveTransactions(userId),
     getUpcomingClosings(userId),
+    getUpcomingShowings(userId),
     getContactsNeedingFollowUp(userId),
   ]);
 
@@ -105,13 +114,17 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-7">
         <StatTile label="Total contacts" value={summary.totalContactsCount} />
         <StatTile label="Active clients" value={summary.activeClientsCount} />
         <StatTile label="Active transactions" value={summary.activeTransactionsCount} />
         <StatTile label="Tasks due today" value={summary.tasksDueTodayCount} />
         <StatTile label="Overdue tasks" value={summary.overdueTasksCount} />
         <StatTile label="Upcoming deadlines" value={summary.upcomingDeadlinesCount} />
+        <StatTile
+          label="Commission earned (YTD)"
+          value={formatCurrency(summary.commissionEarnedYtd) ?? "$0"}
+        />
       </div>
 
       <Card>
@@ -318,39 +331,80 @@ export default async function DashboardPage() {
         </div>
       </Card>
 
-      <Card>
-        <CardHeader title="Upcoming Closings" />
-        <div className="flex flex-col divide-y divide-border">
-          {upcomingClosings.length === 0 ? (
-            <div className="p-5">
-              <EmptyState
-                title="No upcoming closings"
-                description="Transactions with an expected closing date will show up here as they approach."
-              />
-            </div>
-          ) : (
-            upcomingClosings.map((transaction) => (
-              <Link
-                key={transaction.id}
-                href={`/transactions/${transaction.id}`}
-                className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-surface-muted"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground">
-                    {contactDisplayName(transaction.contact)}
-                  </p>
-                  <p className="truncate text-sm text-muted-foreground">
-                    {transaction.propertyAddress ?? "No address on file"}
-                  </p>
-                </div>
-                <span className="shrink-0 text-sm text-muted-foreground">
-                  {transaction.expectedClosingDate ? formatDate(transaction.expectedClosingDate) : "—"}
-                </span>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader
+            title="Upcoming Showings"
+            action={
+              <Link href="/showings" className="text-sm font-medium text-accent">
+                View all
               </Link>
-            ))
-          )}
-        </div>
-      </Card>
+            }
+          />
+          <div className="flex flex-col divide-y divide-border">
+            {upcomingShowings.length === 0 ? (
+              <div className="p-5">
+                <EmptyState
+                  title="No upcoming showings"
+                  description="Showings you schedule — from a contact's page, or synced from ShowingTime — will show up here."
+                />
+              </div>
+            ) : (
+              upcomingShowings.map((showing) => (
+                <Link
+                  key={showing.id}
+                  href={`/showings/${showing.id}`}
+                  className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-surface-muted"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">{showing.propertyAddress}</p>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {showing.contact ? contactDisplayName(showing.contact) : "Unassigned"}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-sm text-muted-foreground">
+                    {formatDateTimeWithYear(showing.scheduledAt)}
+                  </span>
+                </Link>
+              ))
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Upcoming Closings" />
+          <div className="flex flex-col divide-y divide-border">
+            {upcomingClosings.length === 0 ? (
+              <div className="p-5">
+                <EmptyState
+                  title="No upcoming closings"
+                  description="Transactions with an expected closing date will show up here as they approach."
+                />
+              </div>
+            ) : (
+              upcomingClosings.map((transaction) => (
+                <Link
+                  key={transaction.id}
+                  href={`/transactions/${transaction.id}`}
+                  className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-surface-muted"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">
+                      {contactDisplayName(transaction.contact)}
+                    </p>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {transaction.propertyAddress ?? "No address on file"}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-sm text-muted-foreground">
+                    {transaction.expectedClosingDate ? formatDate(transaction.expectedClosingDate) : "—"}
+                  </span>
+                </Link>
+              ))
+            )}
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }

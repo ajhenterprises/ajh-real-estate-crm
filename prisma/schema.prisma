@@ -270,6 +270,13 @@ model Transaction {
   purchasePrice Decimal? @db.Decimal(12, 2)
   listingPrice  Decimal? @db.Decimal(12, 2)
 
+  // What this deal actually paid out — entered by the agent, never derived
+  // from purchasePrice/listingPrice (commission rates and splits vary too
+  // much to guess). updateTransactionAction requires this to be set (here
+  // or already saved) before status can move to CLOSED, so a closed deal
+  // never silently lacks a commission figure for the dashboard total to sum.
+  commissionAmount Decimal? @db.Decimal(12, 2)
+
   contractEffectiveDate DateTime?
   expectedClosingDate   DateTime?
   actualClosingDate     DateTime?

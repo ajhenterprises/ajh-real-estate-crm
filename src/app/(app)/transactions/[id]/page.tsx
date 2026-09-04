@@ -124,6 +124,7 @@ export default async function TransactionDetailPage(props: PageProps<"/transacti
               <InfoField label="MLS number" value={transaction.mlsNumber} />
               <InfoField label="Listing price" value={formatCurrency(transaction.listingPrice?.toString())} />
               <InfoField label="Purchase price" value={formatCurrency(transaction.purchasePrice?.toString())} />
+              <InfoField label="Commission earned" value={formatCurrency(transaction.commissionAmount?.toString())} />
               <InfoField
                 label="Contract effective"
                 value={transaction.contractEffectiveDate ? formatDateWithYear(transaction.contractEffectiveDate) : null}

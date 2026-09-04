@@ -23,6 +23,8 @@ export async function getDashboardSummary(userId: string) {
   const startOfToday = startOfTodayUTC();
   const endOfToday = endOfTodayUTC();
 
+  const startOfYear = new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1));
+
   const [
     activeTransactionsCount,
     tasksDueTodayCount,
@@ -30,6 +32,7 @@ export async function getDashboardSummary(userId: string) {
     activeClientsCount,
     overdueTasksCount,
     totalContactsCount,
+    commissionYtd,
   ] = await Promise.all([
     prisma.transaction.count({
       where: {
@@ -58,6 +61,10 @@ export async function getDashboardSummary(userId: string) {
       where: { assignedUserId: userId, status: "PENDING", dueDate: { lt: startOfToday } },
     }),
     prisma.contact.count({ where: { ownerId: userId } }),
+    prisma.transaction.aggregate({
+      where: { ownerId: userId, status: "CLOSED", actualClosingDate: { gte: startOfYear } },
+      _sum: { commissionAmount: true },
+    }),
   ]);
 
   return {
@@ -67,6 +74,7 @@ export async function getDashboardSummary(userId: string) {
     activeClientsCount,
     overdueTasksCount,
     totalContactsCount,
+    commissionEarnedYtd: commissionYtd._sum.commissionAmount?.toString() ?? "0",
   };
 }
 
@@ -138,6 +146,19 @@ export async function getUpcomingClosings(userId: string) {
       expectedClosingDate: { gte: startOfTodayUTC() },
     },
     orderBy: { expectedClosingDate: "asc" },
+    include: { contact: true },
+    take: 8,
+  });
+}
+
+export async function getUpcomingShowings(userId: string) {
+  return prisma.showing.findMany({
+    where: {
+      ownerId: userId,
+      status: "SCHEDULED",
+      scheduledAt: { gte: startOfTodayUTC() },
+    },
+    orderBy: { scheduledAt: "asc" },
     include: { contact: true },
     take: 8,
   });

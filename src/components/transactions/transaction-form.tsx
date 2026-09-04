@@ -15,6 +15,7 @@ export interface TransactionFormValues {
   mlsNumber?: string;
   listingPrice?: string;
   purchasePrice?: string;
+  commissionAmount?: string;
   contractEffectiveDate?: string;
   expectedClosingDate?: string;
   actualClosingDate?: string;
@@ -105,6 +106,20 @@ export function TransactionForm({
           />
         </Field>
       </div>
+
+      <Field
+        label="Commission earned"
+        htmlFor="commissionAmount"
+        hint="Required before marking this transaction Closed — this is what feeds the dashboard's commission total."
+      >
+        <TextInput
+          id="commissionAmount"
+          name="commissionAmount"
+          inputMode="decimal"
+          placeholder="13500"
+          defaultValue={defaultValues?.commissionAmount}
+        />
+      </Field>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Field label="Contract effective" htmlFor="contractEffectiveDate" hint="Optional">

@@ -22,7 +22,7 @@ function resolveDueDate(
   if (!anchorDate) return null;
 
   const due = new Date(anchorDate);
-  due.setDate(due.getDate() + template.dueDateOffsetDays);
+  due.setUTCDate(due.getUTCDate() + template.dueDateOffsetDays);
   return due;
 }
 

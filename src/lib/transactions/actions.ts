@@ -51,6 +51,7 @@ const transactionFieldsSchema = {
   mlsNumber: optionalString,
   listingPrice: optionalMoney,
   purchasePrice: optionalMoney,
+  commissionAmount: optionalMoney,
   contractEffectiveDate: optionalDate,
   expectedClosingDate: optionalDate,
   actualClosingDate: optionalDate,
@@ -83,6 +84,10 @@ export async function createTransactionAction(
   }
 
   const { contactId, ...fields } = parsed.data;
+
+  if (fields.status === "CLOSED" && !fields.commissionAmount) {
+    return { error: "Enter the commission earned before marking this transaction Closed." };
+  }
 
   // Never trust a contact id from the browser: it must belong to the
   // signed-in user, or the transaction is not created.
@@ -123,6 +128,11 @@ export async function updateTransactionAction(
   });
   if (!existing) {
     return { error: "That transaction could not be found." };
+  }
+
+  const willHaveCommission = fields.commissionAmount !== undefined || existing.commissionAmount !== null;
+  if (fields.status === "CLOSED" && !willHaveCommission) {
+    return { error: "Enter the commission earned before marking this transaction Closed." };
   }
 
   await prisma.transaction.update({ where: { id: existing.id }, data: fields });
