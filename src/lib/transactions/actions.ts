@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
 import { TRANSACTION_EVENT_TYPE_LABELS } from "@/lib/labels";
 import { generateChecklistForTransaction } from "@/lib/tasks/checklist";
+import { cancelTransactionReminders, scheduleTransactionEventReminders } from "@/lib/notifications/scheduling";
 
 const TRANSACTION_TYPES = ["BUYER", "SELLER", "OTHER"] as const;
 const TRANSACTION_STATUSES = [
@@ -137,6 +138,13 @@ export async function updateTransactionAction(
 
   await prisma.transaction.update({ where: { id: existing.id }, data: fields });
 
+  // A closed or cancelled transaction's remaining deadlines no longer
+  // matter — cancel every reminder still pending for its events rather
+  // than let them fire for a deal that's already done.
+  if (fields.status === "CLOSED" || fields.status === "CANCELLED") {
+    await cancelTransactionReminders(existing.id);
+  }
+
   revalidatePath(`/transactions/${existing.id}`);
   revalidatePath(`/contacts/${existing.contactId}`);
   revalidatePath("/transactions");
@@ -178,7 +186,7 @@ export async function addTransactionEventAction(
     return { error: "That transaction could not be found." };
   }
 
-  await prisma.transactionEvent.create({
+  const event = await prisma.transactionEvent.create({
     data: {
       transactionId: transaction.id,
       eventType,
@@ -187,6 +195,8 @@ export async function addTransactionEventAction(
       notes,
     },
   });
+
+  await scheduleTransactionEventReminders(event, session.user.id, transaction.propertyAddress);
 
   revalidatePath(`/transactions/${transaction.id}`);
   return {};
@@ -202,13 +212,16 @@ export async function setTransactionEventStatusAction(formData: FormData) {
 
   const event = await prisma.transactionEvent.findFirst({
     where: { id: eventId, transaction: { ownerId: session.user.id } },
+    include: { transaction: { select: { propertyAddress: true } } },
   });
   if (!event) return;
 
-  await prisma.transactionEvent.update({
+  const updated = await prisma.transactionEvent.update({
     where: { id: event.id },
     data: { status: status as "PENDING" | "COMPLETED" | "MISSED" | "WAIVED" },
   });
+
+  await scheduleTransactionEventReminders(updated, session.user.id, event.transaction.propertyAddress);
 
   revalidatePath("/");
   revalidatePath(`/transactions/${event.transactionId}`);
@@ -252,6 +265,7 @@ export async function updateTransactionEventAction(
 
   const event = await prisma.transactionEvent.findFirst({
     where: { id: eventId, transaction: { ownerId: session.user.id } },
+    include: { transaction: { select: { propertyAddress: true } } },
   });
   if (!event) {
     return { error: "That date could not be found." };
@@ -261,7 +275,7 @@ export async function updateTransactionEventAction(
     ? event.calculatedDate === null || date.getTime() !== event.calculatedDate.getTime()
     : false;
 
-  await prisma.transactionEvent.update({
+  const updated = await prisma.transactionEvent.update({
     where: { id: event.id },
     data: {
       date,
@@ -270,6 +284,8 @@ export async function updateTransactionEventAction(
       overrideNote: isOverridden ? (overrideNote ?? event.overrideNote) : null,
     },
   });
+
+  await scheduleTransactionEventReminders(updated, session.user.id, event.transaction.propertyAddress);
 
   revalidatePath(`/transactions/${event.transactionId}`);
   redirect(`/transactions/${event.transactionId}`);
@@ -284,13 +300,16 @@ export async function resetTransactionEventOverrideAction(formData: FormData) {
 
   const event = await prisma.transactionEvent.findFirst({
     where: { id: eventId, transaction: { ownerId: session.user.id } },
+    include: { transaction: { select: { propertyAddress: true } } },
   });
   if (!event || !event.isCalculated || event.calculatedDate === null) return;
 
-  await prisma.transactionEvent.update({
+  const updated = await prisma.transactionEvent.update({
     where: { id: event.id },
     data: { date: event.calculatedDate, isOverridden: false, overrideNote: null },
   });
+
+  await scheduleTransactionEventReminders(updated, session.user.id, event.transaction.propertyAddress);
 
   revalidatePath(`/transactions/${event.transactionId}`);
   redirect(`/transactions/${event.transactionId}`);

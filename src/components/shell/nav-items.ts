@@ -5,6 +5,7 @@ export const primaryNavItems = [
   { href: "/showings", label: "Showings" },
   { href: "/transactions", label: "Transactions" },
   { href: "/tasks", label: "Tasks" },
+  { href: "/notifications", label: "Notifications" },
   { href: "/documents", label: "Documents" },
   { href: "/tax-expenses", label: "Tax & Expenses" },
   { href: "/reports", label: "Reports" },

@@ -41,6 +41,9 @@ model User {
   mileageRecords               MileageRecord[]
   expenseCategories            ExpenseCategory[]
   showings                     Showing[]
+  pushSubscriptions            PushSubscription[]
+  notificationPreference       NotificationPreference?
+  scheduledNotifications       ScheduledNotification[]
 
   @@map("users")
 }
@@ -1201,4 +1204,106 @@ model BrandSettings {
   updatedAt       DateTime @updatedAt
 
   @@map("brand_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Push notifications — Web Push (VAPID), no third-party notification
+// service. See src/lib/notifications for the scheduling logic and
+// src/app/api/cron/send-notifications for the periodic sender.
+// ---------------------------------------------------------------------------
+
+// One row per subscribed browser/device (a user can install the PWA on more
+// than one). `endpoint` is the push service URL the browser gave us —
+// globally unique by construction (it encodes the specific subscription),
+// so it's also this table's natural dedupe key.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
+// Singleton per user (one row, created on first visit to Settings ->
+// Notifications). Category toggles gate whether scheduling code creates
+// ScheduledNotification rows for that category at all — turning a category
+// off does not retroactively cancel already-scheduled reminders, the same
+// way changing a filter doesn't retroactively hide history elsewhere in
+// this app.
+model NotificationPreference {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tasksEnabled                Boolean @default(true)
+  followUpsEnabled            Boolean @default(true)
+  transactionDeadlinesEnabled Boolean @default(true)
+
+  // Single chosen offset for task/follow-up due-time reminders — one
+  // reminder, not several stacked, per the product requirement to never
+  // send duplicate/overlapping notifications for the same thing. Minutes
+  // before the due time; 0 means "at the scheduled time" exactly.
+  taskReminderMinutesBefore     Int @default(0)
+  followUpReminderMinutesBefore Int @default(0)
+
+  // Transaction/contract key dates get a whole schedule, not just one
+  // offset (a closing date matters more the closer it gets) — how many
+  // days before each deadline to remind, in addition to a fixed reminder
+  // on the day itself (always sent, not part of this configurable list).
+  transactionReminderDaysBefore Int[] @default([3, 1])
+
+  updatedAt DateTime @updatedAt
+
+  @@map("notification_preferences")
+}
+
+enum NotificationCategory {
+  TASK
+  FOLLOW_UP
+  TRANSACTION_DEADLINE
+}
+
+// One row per individual reminder instance — e.g. a transaction event with
+// a 3-day-before/1-day-before/day-of schedule produces three rows, each
+// independently sendable/cancellable. (sourceType, sourceId, offsetKey) is
+// the natural key: rescheduling (a date changed) or cancelling (deleted/
+// closed/cancelled) always deletes by that key rather than trying to diff
+// times in place, which keeps the reschedule-on-change logic throughout
+// src/lib/notifications trivially correct instead of stateful.
+model ScheduledNotification {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  category NotificationCategory
+  title    String
+  body     String
+  // In-app path a click/tap should land on — always same-origin, never a
+  // full external URL.
+  url      String
+
+  sendAt      DateTime
+  sentAt      DateTime?
+  readAt      DateTime?
+
+  // What real record this reminds about (a Task/Contact/TransactionEvent
+  // id) and which slot in that record's reminder schedule this row fills
+  // (e.g. "AT_TIME", "DAYS_BEFORE_3") — free strings rather than a second
+  // enum+id-type pair, since the set of source kinds is small and only
+  // ever read back by the exact string the scheduling code that created
+  // it also writes.
+  sourceType String
+  sourceId   String
+  offsetKey  String
+
+  createdAt DateTime @default(now())
+
+  @@unique([sourceType, sourceId, offsetKey])
+  @@index([userId, sendAt])
+  @@map("scheduled_notifications")
 }

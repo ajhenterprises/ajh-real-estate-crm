@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
 import { shouldMarkTaskDueDateOverridden } from "@/lib/tasks/due-date-override";
+import { scheduleTaskReminder } from "@/lib/notifications/scheduling";
 
 /**
  * Every mutation here re-derives the current user from the session and
@@ -16,13 +17,21 @@ import { shouldMarkTaskDueDateOverridden } from "@/lib/tasks/due-date-override";
 async function setTaskStatus(taskId: string, status: "PENDING" | "COMPLETED" | "CANCELLED") {
   const session = await requireSession();
 
-  await prisma.task.updateMany({
+  const { count } = await prisma.task.updateMany({
     where: { id: taskId, assignedUserId: session.user.id },
     data: {
       status,
       completedDate: status === "COMPLETED" ? new Date() : null,
     },
   });
+
+  if (count > 0) {
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      select: { id: true, title: true, dueDate: true, status: true, assignedUserId: true },
+    });
+    if (task) await scheduleTaskReminder(task);
+  }
 
   revalidatePath("/");
   revalidatePath("/tasks");
@@ -124,6 +133,8 @@ export async function createTaskAction(
     },
   });
 
+  await scheduleTaskReminder(task);
+
   revalidatePath("/tasks");
   revalidatePath("/");
   if (relations.transactionId) revalidatePath(`/transactions/${relations.transactionId}`);
@@ -157,7 +168,7 @@ export async function updateTaskAction(
 
   const isOverridden = shouldMarkTaskDueDateOverridden(existing, fields.dueDate);
 
-  await prisma.task.update({
+  const updated = await prisma.task.update({
     where: { id: existing.id },
     data: {
       ...fields,
@@ -167,6 +178,8 @@ export async function updateTaskAction(
       transactionId: relations.transactionId,
     },
   });
+
+  await scheduleTaskReminder(updated);
 
   revalidatePath("/tasks");
   revalidatePath(`/tasks/${existing.id}`);
@@ -214,7 +227,7 @@ export async function addTransactionTaskAction(
     return { error: "That transaction could not be found." };
   }
 
-  await prisma.task.create({
+  const task = await prisma.task.create({
     data: {
       title,
       dueDate,
@@ -224,6 +237,8 @@ export async function addTransactionTaskAction(
       assignedUserId: session.user.id,
     },
   });
+
+  await scheduleTaskReminder(task);
 
   revalidatePath(`/transactions/${transaction.id}`);
   revalidatePath("/tasks");
@@ -249,10 +264,12 @@ export async function resetTaskDueDateOverrideAction(formData: FormData) {
   });
   if (!task || !task.transactionEvent) return;
 
-  await prisma.task.update({
+  const updated = await prisma.task.update({
     where: { id: task.id },
     data: { dueDate: task.transactionEvent.date, isOverridden: false },
   });
+
+  await scheduleTaskReminder(updated);
 
   revalidatePath("/tasks");
   revalidatePath(`/tasks/${task.id}`);

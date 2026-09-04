@@ -1,4 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run db:migrate:deploy && next build"
+  "buildCommand": "npm run db:migrate:deploy && next build",
+  "crons": [
+    {
+      "path": "/api/cron/send-notifications",
+      "schedule": "*/5 * * * *"
+    }
+  ]
 }

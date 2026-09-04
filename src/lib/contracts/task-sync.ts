@@ -1,5 +1,6 @@
 import type { Prisma } from "@/generated/prisma/client";
 import type { TaskStatus, TransactionEventType } from "@/generated/prisma/enums";
+import { scheduleTaskReminder } from "@/lib/notifications/scheduling";
 
 /**
  * Contract-derived tasks (Phase 6) only exist for deadlines that imply real
@@ -71,7 +72,7 @@ export async function reconcileContractDerivedTask(
   const decision = decideContractTaskReconciliation(existingTask);
 
   if (decision.kind === "create") {
-    await tx.task.create({
+    const task = await tx.task.create({
       data: {
         title: params.event.title,
         description: `Generated from the contract's ${params.event.title} deadline.`,
@@ -83,14 +84,16 @@ export async function reconcileContractDerivedTask(
         assignedUserId: params.assignedUserId,
       },
     });
+    await scheduleTaskReminder(task, tx);
     return;
   }
 
   if (decision.kind === "sync") {
-    await tx.task.update({
+    const task = await tx.task.update({
       where: { id: existingTask!.id },
       data: { dueDate: params.event.date },
     });
+    await scheduleTaskReminder(task, tx);
   }
 
   // "skip": completed, cancelled, or manually overridden — left untouched.

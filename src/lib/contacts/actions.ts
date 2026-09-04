@@ -16,6 +16,7 @@ import {
   CONTACT_ACTIVITY_DEFAULT_DESCRIPTIONS,
   CONTACT_TOUCHPOINT_ACTIVITY_TYPES,
 } from "@/lib/contacts/activity";
+import { cancelFollowUpReminder, cancelTaskReminder, scheduleFollowUpReminder } from "@/lib/notifications/scheduling";
 import { combineDateAndTimeUTC } from "@/lib/format";
 import { CLIENT_CONTACT_TYPES } from "@/lib/labels";
 
@@ -178,6 +179,13 @@ export async function deleteContactAction(
     return { error: "This contact has transactions on file and can't be deleted. Set their status to Past Client instead." };
   }
 
+  // Cascading the delete removes this contact's tasks at the database
+  // level, but ScheduledNotification rows aren't a foreign-key relation
+  // to Task/Contact (see its schema comment) — cancel every pending
+  // reminder that would otherwise point at a page that's about to 404.
+  const tasks = await prisma.task.findMany({ where: { contactId: contact.id }, select: { id: true } });
+  await Promise.all([cancelFollowUpReminder(contact.id), ...tasks.map((task) => cancelTaskReminder(task.id))]);
+
   await prisma.contact.delete({ where: { id: contact.id } });
 
   revalidatePath("/contacts");
@@ -228,6 +236,7 @@ export async function setContactFollowUpDateAction(
   if (!updated) {
     return { error: "That contact could not be found." };
   }
+  await scheduleFollowUpReminder(updated);
 
   revalidatePath(`/contacts/${contactId}`);
   revalidatePath("/");

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
 import { calculateContractEvents } from "@/lib/contracts/dates";
 import { isContractTaskEventType, reconcileContractDerivedTask } from "@/lib/contracts/task-sync";
+import { scheduleTransactionEventReminders } from "@/lib/notifications/scheduling";
 import { extractPdfText } from "@/lib/contracts/extract-pdf-text";
 import { parseContractText, type ParsedContractFields } from "@/lib/contracts/parse-fields";
 import { parseContractAmendmentText, type ParsedContractAmendment } from "@/lib/contracts/parse-amendment";
@@ -336,6 +337,11 @@ export async function confirmContractInformationAction(formData: FormData) {
   const candidates = calculateContractEvents(info);
 
   await prisma.$transaction(async (tx) => {
+    const transaction = await tx.transaction.findUnique({
+      where: { id: info.transactionId },
+      select: { propertyAddress: true },
+    });
+
     for (const candidate of candidates) {
       const existingEvent = await tx.transactionEvent.findUnique({
         where: {
@@ -385,6 +391,18 @@ export async function confirmContractInformationAction(formData: FormData) {
           assignedUserId: info.ownerId,
         });
       }
+
+      // Every key date gets a reminder schedule, not just the ones that
+      // also generate a checklist task — re-confirming (e.g. after an
+      // addendum changes a date) always cancels and recreates this
+      // event's reminders, so a changed date's old schedule can never
+      // linger alongside the new one.
+      await scheduleTransactionEventReminders(
+        { id: event.id, transactionId: event.transactionId, title: event.title, date: event.date, status: event.status },
+        info.ownerId,
+        transaction?.propertyAddress ?? null,
+        tx,
+      );
     }
 
     await tx.contractInformation.update({

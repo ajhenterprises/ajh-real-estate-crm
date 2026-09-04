@@ -13,7 +13,7 @@ import { primaryNavItems } from "@/components/shell/nav-items";
  * close-on-backdrop/close-on-Escape behavior that the always-visible
  * desktop sidebar doesn't.
  */
-export function MobileNav() {
+export function MobileNav({ unreadNotificationCount = 0 }: { unreadNotificationCount?: number }) {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
 
@@ -81,13 +81,18 @@ export function MobileNav() {
                     <Link
                       href={item.href}
                       aria-current={isActive ? "page" : undefined}
-                      className={`block rounded-md px-3 py-3 text-base font-medium transition-colors ${
+                      className={`flex items-center justify-between rounded-md px-3 py-3 text-base font-medium transition-colors ${
                         isActive
                           ? "bg-accent text-accent-foreground"
                           : "text-muted-foreground hover:bg-surface-muted hover:text-foreground"
                       }`}
                     >
                       {item.label}
+                      {item.href === "/notifications" && unreadNotificationCount > 0 ? (
+                        <span className="rounded-full bg-status-attention px-1.5 py-0.5 text-xs font-semibold text-white">
+                          {unreadNotificationCount}
+                        </span>
+                      ) : null}
                     </Link>
                   </li>
                 );

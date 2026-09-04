@@ -2,10 +2,14 @@ import { requireSession } from "@/lib/auth/session";
 import { SidebarNav } from "@/components/shell/sidebar-nav";
 import { Header } from "@/components/shell/header";
 import { getBrandSettings } from "@/lib/settings/brand";
+import { countUnreadNotifications } from "@/lib/repos/notifications";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
-  const brand = await getBrandSettings();
+  const [brand, unreadNotificationCount] = await Promise.all([
+    getBrandSettings(),
+    countUnreadNotifications(session.user.id),
+  ]);
   const companyName = brand.companyName || "AJH Real Estate CRM";
 
   return (
@@ -34,10 +38,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <span className="text-sm font-semibold text-primary">{companyName}</span>
           )}
         </div>
-        <SidebarNav />
+        <SidebarNav unreadNotificationCount={unreadNotificationCount} />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header userName={session.user.name ?? session.user.email ?? "Agent"} companyName={companyName} />
+        <Header
+          userName={session.user.name ?? session.user.email ?? "Agent"}
+          companyName={companyName}
+          unreadNotificationCount={unreadNotificationCount}
+        />
         <main className="flex-1 overflow-x-hidden bg-background px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
           {children}
         </main>
