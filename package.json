@@ -11,7 +11,7 @@
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit",
     "db:migrate": "node scripts/migrate.mjs",
-    "vercel-build": "node scripts/migrate.mjs && next build --webpack"
+    "vercel-build": "node scripts/migrate.mjs && node scripts/import-legacy.mjs && next build --webpack"
   },
   "dependencies": {
     "react": "19.2.6",
