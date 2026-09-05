@@ -1,6 +1,6 @@
 import pg from 'pg';
 import {createHash} from 'node:crypto';
-import {S3Client,GetObjectCommand,PutObjectCommand,HeadObjectCommand} from '@aws-sdk/client-s3';
+import {S3Client,GetObjectCommand,PutObjectCommand,HeadObjectCommand,DeleteObjectCommand} from '@aws-sdk/client-s3';
 const owner='cmtkxlpsd000004l6fl2plnd7';
 const env=process.env;
 // This explicit one-time migration is restricted to the verified CRM owner.
@@ -36,7 +36,7 @@ try{
  for(const r of records.transactions)await save('transactions',r,'transaction',{name:[r.propertyAddress,r.propertyCity,r.propertyState,r.propertyZip].filter(Boolean).join(', ')||'Imported transaction',contactId:link('contacts',r.contactId),side:title(r.type),status:({PROSPECT:'Prospecting',UNDER_CONTRACT:'Under contract',PENDING:'Closing'})[r.status]||title(r.status),price:cents(r.purchasePrice??r.listingPrice),commission:cents(r.commissionAmount),date:day(r.actualClosingDate||r.expectedClosingDate),notes:notes(r)});
  for(const r of records.tasks)await save('tasks',r,'task',{name:r.title,date:day(r.dueDate),priority:r.priority==='URGENT'?'High':title(r.priority),status:r.status==='PENDING'?'Open':'Complete',contactId:link('contacts',r.contactId),transactionId:link('transactions',r.transactionId),notes:notes(r,[r.status==='CANCELLED'?'Original status: Cancelled':'',r.category])});
  for(const r of records.showings){const parts=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(r.scheduledAt)).map(p=>[p.type,p.value]));await save('showings',r,'showing',{name:r.propertyAddress,contactId:link('contacts',r.contactId),date:`${parts.year}-${parts.month}-${parts.day}`,time:`${parts.hour}:${parts.minute}`,status:title(r.status),notes:notes(r)});}
- for(const r of records.expenses)await save('expenses',r,'expense',{name:r.vendor,amount:cents(r.amount),date:day(r.expenseDate),category:categories[r.categoryId]||'Other',status:({NEEDS_REVIEW:'Needs review',NOT_DEDUCTIBLE:'Not deductible',DEDUCTIBLE:'Deductible'})[r.deductibleStatus],businessUse:r.businessUsePercent??'',transactionId:link('transactions',r.transactionId),contactId:link('contacts',r.contactId),notes:notes(r,[r.businessPurpose,`Payment method: ${title(r.paymentMethod)}`])});
+ for(const r of records.expenses)await save('expenses',r,'expense',{name:r.vendor,amount:cents(r.amount),date:day(r.expenseDate),category:['Advertising','MLS & dues','Software','Office','Photography','Education','Travel','Meals','Other'].includes(categories[r.categoryId])?categories[r.categoryId]:'Other',status:({NEEDS_REVIEW:'Needs review',NOT_DEDUCTIBLE:'Not deductible',DEDUCTIBLE:'Deductible'})[r.deductibleStatus],businessUse:r.businessUsePercent??'',transactionId:link('transactions',r.transactionId),contactId:link('contacts',r.contactId),notes:notes(r,[`Original category: ${categories[r.categoryId]||'Other'}`,r.businessPurpose,`Payment method: ${title(r.paymentMethod)}`])});
  for(const r of records.mileage_records)await save('mileage_records',r,'mileage',{name:r.businessPurpose,date:day(r.date),from:r.startLocation,to:r.destination,miles:Number(r.miles),linkedType:r.transactionId?'Transaction':r.contactId?'Contact':'',linkedId:r.transactionId?link('transactions',r.transactionId):link('contacts',r.contactId),notes:notes(r)});
  for(const r of records.contact_activities)await save('contact_activities',r,'note',{name:r.description.slice(0,500),type:({CALL:'Call',EMAIL:'Email',TEXT:'Text',NOTE_ADDED:'Note'})[r.type]||'Other',date:day(r.createdAt),contactId:link('contacts',r.contactId),notes:r.description});
  const docs=records.documents.filter(r=>r.status!=='PENDING_DELETION');
@@ -45,13 +45,22 @@ try{
   const s3=new S3Client({region:env.S3_REGION,endpoint:env.S3_ENDPOINT,forcePathStyle:env.S3_FORCE_PATH_STYLE==='true',credentials:{accessKeyId:env.S3_ACCESS_KEY_ID,secretAccessKey:env.S3_SECRET_ACCESS_KEY}});
   for(const r of docs){
    const key=`closing-desk/${owner}/${id('documents',r.id)}`;
-   const obj=await s3.send(new GetObjectCommand({Bucket:env.S3_BUCKET,Key:r.storagePath}));
+   let obj;
+   try{obj=await s3.send(new GetObjectCommand({Bucket:env.S3_BUCKET,Key:r.storagePath}));}
+   catch(error){if(error.name!=='NoSuchKey')throw error;
+    await save('documents',r,'document',{name:r.filename,key:'',missingOriginal:true,type:r.mimeType||'application/octet-stream',size:r.fileSize||0,contactId:link('contacts',r.contactId),transactionId:link('transactions',r.transactionId),expenseId:link('expenses',r.expenseId)});
+    counts.missingOriginalFiles=(counts.missingOriginalFiles||0)+1;continue;}
    const body=await obj.Body.transformToByteArray();
    await s3.send(new PutObjectCommand({Bucket:env.S3_BUCKET,Key:key,Body:body,ContentType:obj.ContentType||'application/octet-stream'}));
    const check=await s3.send(new HeadObjectCommand({Bucket:env.S3_BUCKET,Key:key}));
    if(check.ContentLength!==body.length)throw Error('Document copy size mismatch');
    await save('documents',r,'document',{name:r.filename,key,type:obj.ContentType||r.mimeType||'application/octet-stream',size:body.length,contactId:link('contacts',r.contactId),transactionId:link('transactions',r.transactionId),expenseId:link('expenses',r.expenseId)});
   }
+  const probe=`closing-desk/${owner}/import-storage-check`;
+  await s3.send(new PutObjectCommand({Bucket:env.S3_BUCKET,Key:probe,Body:'ok',ContentType:'text/plain'}));
+  const probeRead=await s3.send(new GetObjectCommand({Bucket:env.S3_BUCKET,Key:probe}));
+  if(Buffer.from(await probeRead.Body.transformToByteArray()).toString()!=='ok')throw Error('Storage verification failed');
+  await s3.send(new DeleteObjectCommand({Bucket:env.S3_BUCKET,Key:probe}));
  }
  await db.query('INSERT INTO closing_desk.import_runs VALUES($1,now(),$2)',[owner,JSON.stringify(counts)]);
  await db.query('COMMIT');console.log('Legacy CRM import completed:',JSON.stringify(counts));
