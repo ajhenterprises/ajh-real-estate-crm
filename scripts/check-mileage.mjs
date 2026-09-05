@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {validate,mileageMatches,checkMileageAttachment} from '../lib/model.ts';
+const row=(kind,type)=>({id:'record-1',kind,data:{type},createdAt:'',updatedAt:''});
+const entry=validate('mileage',{name:'Buyer showing',date:'2026-09-05',from:'Office',to:'Property',miles:'12.35',linkedType:'Showing',linkedId:'record-1'});
+assert.equal(entry.miles,12.35);
+assert.equal(entry.linkedId,'record-1');
+checkMileageAttachment(entry,row('showing'));
+assert.throws(()=>checkMileageAttachment(entry,row('contact')));
+assert.throws(()=>checkMileageAttachment(entry,null));
+assert.equal(mileageMatches('Meeting',row('note','Training')),false);
+assert.equal(mileageMatches('Training',row('note','Training')),true);
+assert.equal(mileageMatches('Meeting',row('note','Meeting')),true);
+const general=validate('mileage',{name:'Training trip',date:'2026-09-05',from:'Home',to:'Training center',miles:8,linkedType:'Training',activityName:'Contract workshop'});
+assert.equal(general.activityName,'Contract workshop');
+checkMileageAttachment(general,null);
+assert.throws(()=>validate('mileage',{...general,miles:-1}));
+assert.throws(()=>validate('mileage',{...general,date:'2026-02-30'}));
+console.log('Mileage links, type matching, standalone activities, and input validation passed.');
