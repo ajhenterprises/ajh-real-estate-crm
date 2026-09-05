@@ -3,6 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'AJH | Real Estate CRM', description: 'Your private real estate closing desk: contacts, transactions, deadlines and documents.',
+  icons: { icon: '/favicon.svg', shortcut: '/favicon.svg' },
 };
 
 export default function RootLayout({
