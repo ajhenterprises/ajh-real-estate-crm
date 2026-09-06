@@ -3,7 +3,9 @@ import {useState} from 'react';
 import {Row,mileageTypes,mileageMatches} from '@/lib/model';
 
 export function MileageFields({value,rows}:{value:Record<string,any>;rows:Row[]}){
- const [type,setType]=useState(value.linkedType||'');
+ const normalizedType=String(value.linkedType||'');
+ const initialType=mileageTypes.find(t=>t.toLowerCase()===normalizedType.toLowerCase())||'';
+ const [type,setType]=useState(initialType);
  const [linked,setLinked]=useState(value.linkedId||'');
  const candidates=rows.filter(r=>mileageMatches(type,r));
  return <>
