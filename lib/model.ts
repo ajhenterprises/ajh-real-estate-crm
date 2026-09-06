@@ -23,3 +23,5 @@ export function validate(kind:string,input:unknown){const def=definitions[kind];
 export function localDay(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 export function money(cents:any){return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(Number(cents||0)/100);}
 export function displayDate(v:string){return v?new Date(v+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'No date';}
+
+export function displayTime(value:string){const match=/^(\d{2}):(\d{2})$/.exec(value||'');if(!match)return value||'';const hour=Number(match[1]);return `${hour%12||12}:${match[2]} ${hour>=12?'PM':'AM'}`;}
