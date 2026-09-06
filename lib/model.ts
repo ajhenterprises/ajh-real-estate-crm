@@ -1,7 +1,7 @@
 export type Row={id:string;kind:string;data:Record<string,any>;createdAt:string;updatedAt:string};
 export type Field={key:string;label:string;type?:string;options?:string[];required?:boolean};
 export const mileageTypes=['Showing','Meeting','Training','Transaction','Contact','Activity','Other'];
-export const expenseCategories=['Advertising','Lead Generation','Showings','MLS & dues','Software','Office','Photography','Education','Training','Travel','Meals','Brokerage transfer fees','Other'];
+export const expenseCategories=['Advertising','Lead Generation','Showings','MLS & dues','Software','Office','Photography','Education','Training','Travel','Meals','Brokerage transfer fees','License renewal fee','Other'];
 export function mileageMatches(type:string,row:Row){
  const kinds:Record<string,string>={Showing:'showing',Meeting:'note',Training:'note',Transaction:'transaction',Contact:'contact',Activity:'note',Other:'note'};
  return kinds[type]===row.kind&&(!['Meeting','Training'].includes(type)||row.data.type===type);
