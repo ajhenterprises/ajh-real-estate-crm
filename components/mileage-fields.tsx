@@ -14,6 +14,7 @@ export function MileageFields({value,rows}:{value:Record<string,any>;rows:Row[]}
   <label>Miles *<input name="miles" type="number" min="0" step="0.01" required defaultValue={value.miles??''}/></label>
   <label>From *<input name="from" required defaultValue={value.from||''}/></label>
   <label>To *<input name="to" required defaultValue={value.to||''}/></label>
+  <label>Client / contact<select name="contactId" defaultValue={value.contactId||''}><option value="">No contact selected</option>{rows.filter(r=>r.kind==='contact').map(r=><option value={r.id} key={r.id}>{r.data.name}</option>)}</select></label>
   <label>Business activity<select name="linkedType" value={type} onChange={e=>{setType(e.target.value);setLinked('');}}><option value="">General business travel</option>{mileageTypes.map(t=><option key={t}>{t}</option>)}</select></label>
   <label>Attach to existing record<select name="linkedId" value={linked} disabled={!type} onChange={e=>setLinked(e.target.value)}><option value="">No linked record</option>{candidates.map(r=><option value={r.id} key={r.id}>{r.data.name}{r.data.date?' · '+r.data.date:''}</option>)}</select></label>
   {type==='Contact'&&<p className="muted wide">Choose the client or contact this trip was for.</p>}
