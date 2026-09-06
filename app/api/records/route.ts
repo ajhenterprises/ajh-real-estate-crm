@@ -33,3 +33,15 @@ export async function POST(req:Request){
  return response(toRow(q.rows[0]));
  }catch{return response({error:'Unable to save. Please retry.'},503);}
 }
+
+export async function DELETE(req:Request){
+ try{
+  if(!originAllowed(req))return response({error:'Invalid request origin.'},403);
+  const userId=await owner();if(!userId)return response({error:'Please sign in.'},401);
+  let body:any;try{body=await req.json();}catch{return response({error:'Invalid request.'},400);}
+  if(!validId(body.id)||typeof body.kind!=='string'||typeof body.updatedAt!=='string'||!Number.isFinite(Date.parse(body.updatedAt)))return response({error:'Invalid record version.'},400);
+  const q=await database().query('DELETE FROM closing_desk.records WHERE id=$1 AND owner_id=$2 AND kind=$3 AND updated_at=$4::timestamptz RETURNING id',[body.id,userId,body.kind,body.updatedAt]);
+  if(!q.rows.length)return response({error:'This record changed or is unavailable. Reload before deleting.'},409);
+  return new Response(null,{status:204});
+ }catch{return response({error:'Unable to delete. Please retry.'},503);}
+}
